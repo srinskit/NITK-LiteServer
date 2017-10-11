@@ -1,0 +1,62 @@
+@import url('topNav.css');
+html {
+    background: url('../images/back.jpg') no-repeat center center fixed;
+    -webkit-background-size: cover;
+    -moz-background-size: cover;
+    -o-background-size: cover;
+    background-size: cover;
+}
+
+body {
+    padding: 0;
+    margin: 0;
+}
+
+.loginWrapper {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    width: 23%;
+    min-width: 250px;
+}
+
+.errorMsg {
+    padding-top: 10px;
+    text-align: center;
+    color: red
+}
+
+.successMsg {
+    padding-top: 10px;
+    text-align: center;
+    color: green;
+}
+
+#uname,
+#pass {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    display: inline-block;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 20px;
+}
+
+#loginButton {
+    width: 100%;
+    background-color: #0099ff;
+    color: black;
+    padding: 14px 20px;
+    margin: 8px 0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 20px;
+}
+
+#loginButton:hover {
+    background-color: #008ae6;
+}

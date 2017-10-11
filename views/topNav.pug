@@ -1,0 +1,12 @@
+div(id='navDiv')    
+        div(id='navDivLeft') 
+            p(id='navTitle') NITK LITE
+        div(id='navDivRight')    
+            a(href='/about') About
+            if isAuth
+                a(href='/logout') Logout
+            else
+                a(href='/login') Login
+            a(href='/report') Report a problem
+            a(href='http://www.nitk.ac.in/') NITK
+            a(href='/') Home

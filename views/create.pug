@@ -1,0 +1,24 @@
+doctype html
+html
+    head
+        title Create
+        link(rel='stylesheet',href='/stylesheets/create.css')
+    body
+        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/create.js')
+        div(class='errorMsg')
+            if errorMsg.length > 0
+                h4 !{errorMsg}
+        div(class='successMsg')
+            if successMsg.length > 0
+                h4 !{successMsg}
+        div(class='createWrapper')
+            form(action='/dash/admin/create' method='post')
+                input(type='text',placeholder='Username',id='uname',name='username'  autocomplete='off' required autofocus)
+                br
+                input(type='password',placeholder='Password',id='pass1',name='password' required autocomplete='off')
+                br
+                input(type='password',placeholder='Retype Password',id='pass1',name='rpassword' required autocomplete='off')
+                br
+                button(type='submit',id='createButton') Create
+                    

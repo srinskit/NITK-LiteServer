@@ -1,0 +1,24 @@
+doctype html
+html
+  head
+    title Admin (#{user.username})
+    link(rel='stylesheet',href='/stylesheets/dash/admin.css')
+  body
+    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+    script(src='/javascripts/dash/admin.js')
+    script.
+        var username = '#{user.username}' 
+        var navConVisible = false
+    div(id='content')
+        div(id='realContent')
+            h3 Admin Tools
+            ul
+                li(class='toolsLi') 
+                    span Manual override 
+                    span(id='orText') 
+                    input(id='orInput' type='checkbox') 
+                li(class='toolsLi')
+                    a(href='/dash/admin/create' target='_blank') Create an account
+                li(class='toolsLi')
+                    a(href='/dash/admin/users') Manage users
+    include leftNav

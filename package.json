@@ -1,0 +1,29 @@
+{
+  "name": "nitkliteserver",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ./app.js"
+  },
+  "dependencies": {
+    "bcrypt-nodejs": "0.0.3",
+    "body-parser": "^1.17.2",
+    "connect-flash": "^0.1.1",
+    "cookie-parser": "^1.4.3",
+    "debug": "^2.6.8",
+    "express": "^4.15.4",
+    "express-session": "^1.15.5",
+    "express-validator": "^3.2.1",
+    "moment-timezone": "^0.5.13",
+    "mongoose": "^4.11.7",
+    "morgan": "^1.8.2",
+    "node-schedule": "^1.2.4",
+    "passport": "^0.1.18",
+    "passport-local": "^0.1.6",
+    "pug": "^2.0.0-rc.3",
+    "serve-favicon": "^2.4.3",
+    "uuid": "^3.1.0",
+    "winston": "^2.3.1",
+    "ws": "^3.1.0"
+  }
+}

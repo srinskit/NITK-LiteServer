@@ -1,0 +1,30 @@
+@import url('leftNav.css');
+#realContent {
+    padding: 20px;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+td,
+th {
+    border: 1px solid #0099ff;
+    padding: 10px;
+}
+
+td:nth-child(1) {}
+
+td:nth-child(3) {}
+
+tr:hover {
+    background-color: #ddd;
+}
+
+th {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    text-align: left;
+    background-color: #0099ff;
+    color: black;
+}

@@ -1,0 +1,32 @@
+doctype html
+html
+  head
+    title Dash : Users (#{user.username})
+    link(rel='stylesheet',href='/stylesheets/dash/users.css')
+  body
+    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+    script(src='/javascripts/dash/users.js')
+    div(id='content')
+        div(id='realContent')
+            form(method='POST' action='/dash/admin/users')
+                table
+                    tr
+                        th  
+                        th Username
+                        th Change Status
+                        th Remove
+                    each user in users
+                        tr
+                            td
+                                img(id='i'+user.username src=(user.online===true?'../../images/online.jpg':'../../images/offline.jpg'))
+                            td=user.username
+                            td
+                                input(name=(user.admin?'deadmin[]':'admin[]') type='checkbox' value=user.username)
+                                label=(user.admin?'De-admin ':'Make admin')
+                            td
+                                input(name='remove[]' type='checkbox' value=user.username)
+                br
+                input(type='submit' value='Apply Changes')
+    script.
+        var navConVisible = false
+    include leftNav

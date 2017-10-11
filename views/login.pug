@@ -1,0 +1,33 @@
+doctype html
+html
+    head
+        title Login
+        link(rel='stylesheet',href='/stylesheets/login.css')
+    body
+        div(id='navDiv')    
+            div(id='navDivLeft') 
+                p(id='navTitle') NITK LITE
+            div(id='navDivRight')    
+                a(href='/about') About
+                if isAuth
+                    a(href='/logout') Logout
+                else
+                    a(href='/login') Login
+                a(href='/report') Report a problem
+                a(href='http://www.nitk.ac.in/') NITK
+                a(href='/') Home
+        div(class='errorMsg')
+            if errorMsg.length > 0
+                h4 !{errorMsg}
+        div(class='successMsg')
+            if successMsg.length > 0
+                h4 !{successMsg}           
+
+        div(class='loginWrapper')
+            form(action='/login' method='post')
+                input(type='text',placeholder='Username',id='uname',name='username' autocomplete='off' autofocus)
+                br
+                input(type='password',placeholder='Password',id='pass',name='password'  autocomplete='off')
+                br
+                button(type='submit',id='loginButton') Login
+            

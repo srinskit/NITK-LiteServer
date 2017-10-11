@@ -1,0 +1,41 @@
+doctype html
+html
+  head
+    title Dash : Logs (#{user.username})
+    link(rel='stylesheet',href='/stylesheets/dash/logs.css')
+  body
+    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+    script(src='/javascripts/dash/logs.js')
+    div(id='content')
+        div(id='realContent')
+            form(method='GET' action='/dash/logs')
+                label logs from past 
+                select(name='period')
+                    option(value= '1') 1 hour
+                    option(value= '6' selected) 6 hours
+                    option(value= '24') 24 hours
+                    option(value='48') 48 hours
+                label  of level 
+                select(name='level')
+                    option(value= 'all') All
+                    option(value= 'info') Info
+                    option(value='error') Error
+                label  
+                input(type='submit' value='Get')
+                br        
+                br
+            table()
+                tr
+                    th Time Stamp
+                    th Level
+                    th Content
+                each log in logs
+                    tr
+                        td=log.timestamp
+                        td=log.level
+                        td=log.message
+    script.
+        $('select[name="level"]').val('#{vars.level}')
+        $('select[name="period"]').val('#{vars.period}')
+        var navConVisible = false
+    include leftNav

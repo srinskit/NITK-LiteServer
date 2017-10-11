@@ -1,0 +1,4 @@
+node_modules
+.idea
+nodemon.json
+server.log

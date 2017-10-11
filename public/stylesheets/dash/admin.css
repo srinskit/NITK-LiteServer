@@ -1,0 +1,8 @@
+@import url('leftNav.css');
+#realContent {
+    padding: 20px;
+}
+
+.toolsLi {
+    padding: 10px;
+}

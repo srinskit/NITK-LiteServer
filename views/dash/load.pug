@@ -1,0 +1,43 @@
+doctype html
+html
+  head
+    title Dash : Load (#{user.username})
+    link(rel='stylesheet',href='/stylesheets/dash/load.css')
+  body
+    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+    script(src='/javascripts/dash/load.js')
+    div(id='content')
+        div(id='realContent')
+            form(action='/dash/load/' method='POST')
+                h3 Save a config
+                label Enter a name for the config : 
+                input(type='text' name='configName')
+                label  
+                input(type='submit' name='submit' value='Save')
+                h3 Load a config
+                table
+                    tr
+                        th Config
+                        th Load
+                        th Remove
+                    each config in configs
+                        tr
+                            td=config.name
+                            td
+                                input(class='radioUn' type='radio' name='configID' value=config.id)
+                            td
+                                input(type='checkbox' name='remove[]' value=config.id)                            
+                    tr
+                        td Action
+                        td
+                            input(type='submit' name='submit' value='Load')
+                        td
+                            input(type='submit' name='submit' value='Remove') 
+    script.
+        var navConVisible = false
+    include leftNav
+    if msg.length > 0
+        script.
+            $(document).ready(function(){
+                 alert('#{msg}')            
+            })
