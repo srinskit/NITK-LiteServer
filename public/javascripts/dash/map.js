@@ -320,6 +320,7 @@ makeLampMarker = function (lamp) {
                     else {
                         $(`#lB_c${lamp.cid}_l${lamp.lid}`).change(function () {
                             lamp.bri = Number($(`#lB_c${lamp.cid}_l${lamp.lid}`).val())
+                            
                             LampModify(lamp)
                         })
                     }
@@ -383,7 +384,7 @@ LampModifyByCid = function (cid, val) {
     if (val == -1) {
         return
     }
-    wsoc.send(makeMsg('modObjX', {
+    wsoc.send(makeMsg('modObj', {
         type: 'cluster'
         , obj: {
             cid: cid

@@ -24,8 +24,8 @@ myTimeStamp = function () {
             timezone: 'Asia/Kolkata'
         })
     }
-    //Log to console and server.log
-    //TODO custom level to log error.stack
+//Log to console and server.log
+//TODO custom level to log error.stack
 var log = new(winston.Logger)({
         transports: [
       new(winston.transports.Console)({
@@ -38,10 +38,10 @@ var log = new(winston.Logger)({
             })
     ]
     })
-    //Don't exit on error
+//Don't exit on error
 log.exitOnError = false
 log.info('Started Server')
-    //Connect Mongoose to MongoDB
+//Connect Mongoose to MongoDB
 mongoose.Promise = global.Promise
 var dbConfig = require(path.join(__dirname, 'config', 'database.js'))
     //todo handle db connect
@@ -375,6 +375,7 @@ app.get('/dash/admin/create', isAdmin, function (req, res, next) {
         , successMsg: req.flash('successMsg')
     })
 })
+
 app.post('/dash/admin/create', isAdmin, function (req, res, next) {
     if (req.body.rpassword != undefined && req.body.password != undefined && req.body.username != undefined) {
         log.info('[%s] attempted create for %s', req.user.username, req.body.username)
@@ -520,6 +521,7 @@ function isAdmin(req, res, next) {
         res.redirect('/')
     }
 }
+
 create = function (req, done) {
         var username = req.body.username
         var password = req.body.password
@@ -567,7 +569,6 @@ create = function (req, done) {
             })
         })
     }
-    //------------------------------------------------------------------------------------------------------------
 var debug = require('debug')('nodeserver:server')
 var http = require('http')
 var port = normalizePort(process.env.PORT || '80')
@@ -647,8 +648,7 @@ var wss = new WebSocketServer({
     server: server
     , path: '/'
 })
-const webDebug = 'webDebug'
-    , terminal = 'terminal'
+webDebug = 'webDebug', terminal = 'terminal'
     //Module to give unique id to sockets v1 is timestamp based
 var uuid = require('uuid/v1')
     //Web clients by username(multiple connections supported)
@@ -957,40 +957,6 @@ respond = function (msg, client) {
     case 'modObj':
         if (!sConfig.override && !client.admin) {
             log.warn('[%s] Attempt to modObj without prev', client.username)
-            break
-        }
-        switch (msg.data.type) {
-        case 'lamp':
-            var lamp = new Lamp(msg.data.obj)
-            Lamp.update({
-                cid: lamp.cid
-                , lid: lamp.lid
-            }, {
-                $set: {
-                    bri: lamp.bri
-                    , status: lamp.status
-                }
-            }, {}, function (err) {
-                if (err) {
-                    log.error('[%s] Couldn\'t mod obj', client.username, {
-                        stack: err.stack
-                    })
-                    client.send(makeMsg('addError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                }
-                else {
-                    client.send(makeMsg('modSuccess', {}), postSendCallBack)
-                    sendToAllClusterListeners(lamp.cid, jMakeMsg('lamp', lamp.JSONify()))
-                    log.info('[%s] Modified lamp : cid %d lid %d to bri %d', client.username, lamp.cid, lamp.lid, lamp.bri)
-                }
-            })
-            break
-        }
-        break
-    case 'modObjX':
-        if (!sConfig.override && !client.admin) {
-            log.warn('[%s] Attempt to modObjX without prev', client.username)
             break
         }
         switch (msg.data.type) {
@@ -1331,8 +1297,9 @@ loadConfig = function (config, username) {
     //-------------------------------------------------------------------------------------
 const auto = 'AUTO'
 schedule.scheduleJob({
-    hour: 21
-    , minute: 55
+    hour: '*'
+    , minute: 0
+    , second: 0
 }, function () {
     LampConfig.findOne({
         name: 'midnyt'
@@ -1349,7 +1316,7 @@ schedule.scheduleJob({
 })
 timeTime = {
         hour: '*'
-        , minute: '*'
+        , minute: 0
         , second: 0
     }
     //`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
@@ -1526,5 +1493,6 @@ updateParentStatus = function (cid, status) {
             }
         })
     }
-    // create({body:{username:'master',password:'pass',rpassword:'pass'},flash:function(s){}}, function(){
-    // })
+
+// Autoexes
+// create({body:{username:'admin',password:'pass',rpassword:'pass'},user:{username:'auto'}, flash:function(msg){}},function(){})
