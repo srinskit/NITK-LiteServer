@@ -1,41 +1,53 @@
 doctype html
 html
-  head
-    title Dash : Logs (#{user.username})
-    link(rel='stylesheet',href='/stylesheets/dash/logs.css')
-  body
-    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
-    script(src='/javascripts/dash/logs.js')
-    div(id='content')
-        div(id='realContent')
-            form(method='GET' action='/dash/logs')
-                label logs from past 
-                select(name='period')
-                    option(value= '1') 1 hour
-                    option(value= '6' selected) 6 hours
-                    option(value= '24') 24 hours
-                    option(value='48') 48 hours
-                label  of level 
-                select(name='level')
-                    option(value= 'all') All
-                    option(value= 'info') Info
-                    option(value='error') Error
-                label  
-                input(type='submit' value='Get')
-                br        
+    head
+        title Dash : Logs (#{user.username})
+        link(rel='stylesheet',href='/stylesheets/dash/logs.css')
+    body
+        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/dash/logs.js')
+        div(id='content')
+            div(id='realContent')
+                form(method='GET' action='/dash/logs')
+                    table(id='control' style='margin: 0 auto;')
+                        //- tr
+                        //-     th
+                        //-     th Date
+                        //-     th Time
+                        tr
+                            td
+                                label From:
+                            td
+                                input(type='date' name='fromDate' value=vars.fromDate)
+                            td
+                                input(type='time' name='fromTime' step=1 value=vars.fromTime) 
+                        tr
+                            td
+                                label Until:
+                            td
+                                input(type='date' name='untilDate' value= vars.untilDate)
+                            td
+                                input(type='time' name='untilTime' step=1 value=vars.untilTime) 
+                        tr
+                            td
+                                label Level:
+                            td
+                                select(name='level' style='width:100%;')
+                                    for level in ['all', 'info', 'error']
+                                        option(value= level selected= vars.level==level) #{level}
+                            td
+                                input(type='submit' value='Get Logs' style='width:100%;')
                 br
-            table()
-                tr
-                    th Time Stamp
-                    th Level
-                    th Content
-                each log in logs
+                table(id='logs' style='margin: 0 auto;')
                     tr
-                        td=log.timestamp
-                        td=log.level
-                        td=log.message
-    script.
-        $('select[name="level"]').val('#{vars.level}')
-        $('select[name="period"]').val('#{vars.period}')
-        var navConVisible = false
-    include leftNav
+                        th Time
+                        th Level
+                        th Content
+                    each log in logs
+                        tr
+                            td=log.timestamp
+                            td=log.level
+                            td=log.message
+        script.
+            var navConVisible = false
+        include leftNav

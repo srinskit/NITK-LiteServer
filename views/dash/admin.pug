@@ -11,14 +11,15 @@ html
         var navConVisible = false
     div(id='content')
         div(id='realContent')
-            h3 Admin Tools
-            ul
-                li(class='toolsLi') 
-                    span Manual override 
-                    span(id='orText') 
-                    input(id='orInput' type='checkbox') 
-                li(class='toolsLi')
-                    a(href='/dash/admin/create' target='_blank') Create an account
-                li(class='toolsLi')
-                    a(href='/dash/admin/users') Manage users
+            h1 Accounts
+            div(class='paddedDiv')
+                a(href='/dash/admin/create' target='_blank') Create an account
+                br
+                a(href='/dash/admin/users') Manage and check users 
+                br
+            h1 Override
+            div(class='paddedDiv')
+                span Manual override 
+                span(id='orText') 
+                input(id='orInput' type='checkbox') 
     include leftNav

@@ -17,35 +17,9 @@ div(id='nav')
                     a(class='navA' href ='/dash/report') Report
             if user.admin === false
                 li
-                    a(class='navA onOverride' href='/dash/load' style='display:none;') Load
+                    a(class='navA onOverride' href='/dash/load' style='display:none;') Load 
             li 
                 a(class='navA'  href='/logout') Logout
     button(id='navToggler')
-script.
-        if(navConVisible){
-            $('#navToggler').text('<')
-            $('#navContainer').show()
-        }
-        else{
-            $('#navContainer').hide()
-            $('#navToggler').text('>')
-        }
-        runAnime = function () {
-            navConVisible = !navConVisible
-            $('#navContainer').animate({width: 'toggle'},
-            200,
-            function(){
-                if(navConVisible){
-                    $('#navToggler').text('<')
-                }
-                else{
-                    $('#navToggler').text('>')
-                }
-            })
-        }
-        $('#navToggler').on('mouseenter', runAnime)
-        $('#content').on('mouseenter',function(){
-            if(navConVisible){
-                runAnime()
-            }
-        })
+img(id="msgImg" src='/images/msg.png')  
+script(src='/javascripts/dash/leftNav.js')

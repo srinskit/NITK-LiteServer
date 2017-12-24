@@ -2,6 +2,17 @@ doctype html
 html
     head
         title Report
-        link(rel='stylesheet',href='/stylesheets/home.css')
+        link(rel='stylesheet',href='/stylesheets/report.css')
     body
         include topNav
+        //- div(id="main")
+        div(class="card")
+            form(class="container")
+                h3 Problem with some lamps in cluster
+                input(name="cid" placeholder="Cluster ID")
+                br
+                input(name="lids" placeholder="Lamp IDs of faulty lamps")
+                br
+                input(name="description" placeholder="Describe the problem" style="width:100%;")
+                
+                
