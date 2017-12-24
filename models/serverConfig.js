@@ -1,10 +1,15 @@
-var mongoose = require('mongoose')
+/*jslint node: true */
+"use strict";
+var mongoose = require('mongoose');
 var configSchema = mongoose.Schema({
-    override: Boolean
-})
-configSchema.methods.JSONify = function () {
+    override: Boolean,
+    delayBetweenStatusChecks: Number,
+    delayBetweenClusterStatusChecks: Number,
+    timeoutTimeForLampStatusCheck: Number
+});
+configSchema.methods.miniJsonify = function () {
     return {
         override: this.override
-    }
-}
-module.exports = mongoose.model('serverConfig', configSchema)
+    };
+};
+module.exports = mongoose.model('serverConfig', configSchema);

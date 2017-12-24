@@ -1,4 +1,6 @@
-var mongoose = require('mongoose')
+/*jslint node: true */
+"use strict";
+var mongoose = require('mongoose');
 var lampSchema = mongoose.Schema({
     iid: Number,
     lid: Number,
@@ -8,44 +10,64 @@ var lampSchema = mongoose.Schema({
     loc: {
         lat: String,
         lng: String
+    },
+    next: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Lamp'
     }
-})
-lampSchema.methods.JSONify = function () {
+});
+lampSchema.methods.fullJsonify = function () {
     return {
-        'iid': this.iid,
-        'cid': this.cid,
-        'lid': this.lid,
-        'bri': this.bri,
-        'status': this.status,
-        'loc': {
-            'lat': this.loc.lat,
-            'lng': this.loc.lng
-        }
-    }
-}
-lampSchema.methods.mJSONify = function () {
+        _id: this._id,
+        iid: this.iid,
+        cid: this.cid,
+        lid: this.lid,
+        bri: this.bri,
+        status: this.status,
+        loc: this.loc,
+        next: this.next
+    };
+};
+lampSchema.methods.jsonify = function () {
+    return {
+        iid: this.iid,
+        cid: this.cid,
+        lid: this.lid,
+        bri: this.bri,
+        status: this.status,
+        loc: this.loc
+    };
+};
+lampSchema.methods.miniJsonify = function () {
     return {
         'iid': this.iid,
         'cid': this.cid,
         'lid': this.lid,
         'bri': this.bri,
         'status': this.status
-    }
-}
-lampSchema.methods.valid = function () {
-    if (this.status == null) {
-        this.status = 0
-    }
-    if (this.bri == null) {
-        this.bri = 0
-    }
-    if (this.iid == null || this.cid == null || this.lid == null || this.loc.lat == null || this.loc.lng == null) {
-        return false
-    }
-    return isInt(this.iid) && isInt(this.cid) && isInt(this.lid)
-}
+    };
+};
+lampSchema.virtual('FINE').get(() => {
+    return 0;
+});
+lampSchema.virtual('FAULTY').get(() => {
+    return 1;
+});
+lampSchema.virtual('DISCONNECTED').get(() => {
+    return 2;
+});
+lampSchema.virtual('UNKNOWN').get(() => {
+    return 3;
+});
 
-isInt = function (n) {
-    return Number(n) === n && n % 1 === 0
+function isInt(n) {
+    return Number(n) === n && n % 1 === 0;
 }
-module.exports = mongoose.model('Lamp', lampSchema)
+lampSchema.methods.initialiseAndCheck = function () {
+    if (!this.status) this.status = this.UNKNOWN;
+    if (!this.bri) this.bri = 0;
+    this.next = undefined;
+    if (!this.iid || !this.cid || !this.lid || !this.loc || !this.loc.lat || !this.loc.lng) return false;
+    return isInt(this.iid) && isInt(this.cid) && isInt(this.lid);
+};
+module.exports = mongoose.model('Lamp', lampSchema);
