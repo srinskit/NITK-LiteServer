@@ -1,38 +1,46 @@
 jQuery(function ($) {
-    // Asynchronously Load the map API 
-    var script = document.createElement('script')
-    script.src = '//maps.googleapis.com/maps/api/js?key=AIzaSyCT2IciRf75Y52RKEFWuZKpMzF3Vg9Qr_k&callback=initialize'
-    document.body.appendChild(script)
-    $(window).bind('beforeunload', removeListenersBeforeClose)
-})
-var Parents = {}
-    , Pmarkers = {}
-var clusters = {}
-    , clusterMarkers = {}
-var map, bounds
-var addMarker
-const iconRoot = 'http://maps.google.com/mapfiles/ms/icons/'
-const briIconRoot = '/images/'
-var parentStatusIcon = ['green-dot.png', 'red-dot.png', 'orange-dot.png', 'grn-pushpin.png']
-var parentStatusText = ['Online and Synced', 'Offline', 'Online\nbut lamp faulty', 'Awaiting sync']
-var LampStatusIcon = ['yellow.png', 'red.png', 'orange.png']
-var LampStatusText = ['Online', 'NRF link failure', 'Online\nbut faulty']
+    // Asynchronously Load the map API
+    var script = document.createElement('script');
+    script.src = '//maps.googleapis.com/maps/api/js?key=AIzaSyCT2IciRf75Y52RKEFWuZKpMzF3Vg9Qr_k&callback=initialize';
+    document.body.appendChild(script);
+    $(window).bind('beforeunload', removeListenersBeforeClose);
+});
+
+var LAMPOBJ = 'lamp',
+    TERMOBJ = 'terminal',
+    CLUSOBJ = 'cluster';
+var Terminals = {},
+    clusters = {};
+var map, bounds;
+var addMarker;
+const intIconRoot = '/images/';
+var terminalStatusIcon = ['term_connectedsynced.png', 'term_connected.png', 'term_faultylamp.png', 'term_notconnected.png', 'term_unknown.png'];
+var terminalStatusText = ['Connected, synced', 'Connected, waiting sync', 'Connected, lamp faulty', 'Disconnected', 'Unknown'];
+var LampStatus = {
+    FINE: 0,
+    FAULTY: 1,
+    DISCONNECTED: 2,
+    UNKNOWN: 3
+};
+var LampStatusIcon = ['', 'lamp_faulty', 'lamp_notconnected.png', 'lamp_unknown.png'];
 var LampBrightnessIcon = ['yellow_0.png', 'yellow_1.png', 'yellow_2.png', 'yellow_3.png']
-var isShowingLamps = {}
+var LampStatusText = ['Connected, fine', 'Connected, faulty', 'NRF link failure', 'Unknown'];
+var isShowingLamps = {};
 
 function initialize() {
     var mapOptions = {
-            mapTypeId: 'roadmap'
-            , center: {
-                'lat': 13.01081
-                , 'lng': 74.794128
-            }
-            , zoom: 18
-        }
-        // Display a map on the page
-    map = new google.maps.Map(document.getElementById('map'), mapOptions)
-    google.maps.event.addListener(map, 'rightclick', rightClickListener)
-    startWS()
+        mapTypeId: 'roadmap',
+        center: {
+            'lat': 13.01081,
+            'lng': 74.794128
+        },
+        zoom: 18,
+        fullscreenControl: false
+    };
+    // Display a map on the page
+    map = new google.maps.Map(document.getElementById('map'), mapOptions);
+    if (user.admin) google.maps.event.addListener(map, 'rightclick', rightClickListener);
+    startWS();
 }
 var rightClickListener = function (event) {
     if (addMarker !== undefined) {
@@ -42,36 +50,38 @@ var rightClickListener = function (event) {
         addMarker.setMap(null)
     }
     var marker = new google.maps.Marker({
-        position: new google.maps.LatLng(event.latLng.lat(), event.latLng.lng())
-        , map: map
-    , })
-    var iaddNewContent = ['<div id="addDiv"><pre>'
-        , '<label>IID: </label><input name="iIID" type="number"/>\n\n'
-        , '<label>CID: </label><input name="iCID" type="number"/>\n\n'
-        , '<label>LID: </label><input name="iLID" type="number" placeholder="Ignore field for parent"/>\n\n'
-        , '<input type="radio" name="iType" value="lamp" checked>Lamp '
-        , '<input type="radio" name="iType" value="parent">Parent'
-        , '\t<input type="button" value="Add" id="addButton">'
-        , '</pre></div>'].join('')
+        position: new google.maps.LatLng(event.latLng.lat(), event.latLng.lng()),
+        map: map
+    })
+    var iaddNewContent = `<div id='addDiv'> <div id='idInputs'> <input name='iIID' type='number' placeholder='IID' /> \
+<br> <input name='iCID' type='number' placeholder='CID' /> <br> <input name='iLID' type='number' placeholder='LID'\
+/> <br> </div> <br> <input type='button' value='Add' name='addButton' style='float:right'> <label> <input type='radi\
+o' name='iType' value='${LAMPOBJ}' checked>Lamp</label> <label><input type='radio' name='iType' value='${TERMOBJ}'>Term</l\
+abel> <style>#addDiv #idInputs input{box-sizing:border-box;width:100%} </style> </div>`
     marker.infoWindow = new google.maps.InfoWindow({
         content: iaddNewContent
-    })
+    });
     marker.infoWindow.open(map, marker)
     marker.infoWindow.isOpen = true
     google.maps.event.addListener(marker.infoWindow, 'domready', function () {
-        $('#addButton').on('click', function () {
-            wsoc.send(makeMsg('addObj', {
-                type: $('[name="iType"]:checked').val()
-                , obj: {
-                    iid: $('[name="iIID"]').val()
-                    , cid: $('[name="iCID"]').val()
-                    , lid: $('[name="iLID"]').val()
-                    , loc: {
-                        lat: event.latLng.lat()
-                        , lng: event.latLng.lng()
-                    }
+        $('#addDiv input[name="iType"]').click(function () {
+            $('#addDiv input[name=iLID]').prop('disabled', this.value === TERMOBJ);
+        });
+        $('#addDiv input[name="addButton"]').on('click', function () {
+            var data = {
+                type: $('#addDiv input[name="iType"]:checked').val()
+            };
+            data[data.type] = {
+                iid: $('#addDiv [name="iIID"]').val(),
+                cid: $('#addDiv [name="iCID"]').val(),
+                lid: data.type === TERMOBJ ? undefined : $('#addDiv [name="iLID"]').val(),
+                loc: {
+                    lat: event.latLng.lat(),
+                    lng: event.latLng.lng()
                 }
-            }))
+            };
+            wsoc.send(makeMsg('addObj', data));
+            addMarker.setMap(null);
         })
     })
     google.maps.event.addListener(marker.infoWindow, 'closeclick', function () {
@@ -82,340 +92,324 @@ var rightClickListener = function (event) {
 }
 var wsoc
 startWS = function () {
-    var loc = window.location
-        , new_uri, username = user.username
-        , token = readCookie('token')
+    var loc = window.location,
+        new_uri, username = user.username,
+        token = readCookie('token')
     if (loc.protocol === 'https:') {
         new_uri = 'wss:'
-    }
-    else {
+    } else {
         new_uri = 'ws:'
     }
     new_uri += '//' + loc.host + '/'
-    new_uri += '?type=webDebug' + '&username=' + username + '&token=' + token
+    new_uri += `?type=webclient&username=${username}&token=${token}`
     wsoc = new WebSocket(new_uri)
     wsoc.onopen = function (event) {
         wsoc.onmessage = function (event) {
-            process(JSON.parse(event.data))
+            try {
+                process(JSON.parse(event.data))
+            } catch (e) {
+                console.log(e)
+            } finally {}
         }
         wsoc.onerror = function (event) {
             console.log(event.data)
-            alert('Error connecting to Websocket')
+            // alert('Error connecting to Websocket')
         }
     }
     makeMsg = function (type, data) {
         return JSON.stringify({
-            type: type
-            , data: data
+            type: type,
+            data: data
         })
     }
 }
 process = function (msg) {
     console.log(msg)
     switch (msg.type) {
-    case 'parent':
-        modifyParentMarker(msg.data)
+    case TERMOBJ:
+        updateTerminal(msg.data[TERMOBJ])
         break
-    case 'lamp':
-        modifyLampMarker(msg.data)
+    case LAMPOBJ:
+        updateLamp(msg.data[LAMPOBJ])
+        // modifyLampMarker(msg.data[LAMPOBJ])
         break
-    case 'cluster':
-        modifyCluster(msg.data.obj)
+    case CLUSOBJ:
+        modifyCluster(msg.data[CLUSOBJ])
         break
     case 'auth':
         if (msg.data.state == 'pass') {
             wsoc.send(makeMsg('addListener', {
-                'loc': 'parents'
+                'loc': 'terminals'
             }))
             wsoc.send(makeMsg('addListener', {
                 loc: 'serverConfig'
             }))
-        }
-        else {
-            alert('Auth error! Try logging in again')
+        } else {
+            // alert('Auth error! Try logging in again')
         }
         break
     case 'serverConfig':
-        if (msg.data.override == true) {
-            $('.onOverride').show()
-        }
-        else {
-            $('.onOverride').hide()
+        if (msg.data.override === true) {
+            $('.onOverride').show();
+            if (!user.admin) google.maps.event.addListener(map, 'rightclick', rightClickListener);
+        } else if (msg.data.override === false) {
+            $('.onOverride').hide();
+            if (!user.admin) google.maps.event.clearListeners(map, 'rightclick');
         }
         if (msg.data.override != null) {
-            server.override = msg.data.override
-            if (selectedParentMarker) {
-                $(`#lB_c${selectedParentMarker.cid}`).prop('disabled', !server.override)
-            }
-            if (selectedLampMarker) {
-                $(`#lB_c${selectedLampMarker.cid}_l${selectedLampMarker.lid}`).prop('disabled', !server.override)
-            }
+            server.override = msg.data.override;
+            if (selectedTerminalMarker) $(`#infoTerm${selectedTerminalMarker.cid} select[name="bri"]`).prop('disabled', !server.override);
+            if (selectedLampMarker) $(`#infoLamp${selectedLampMarker.cid},${selectedLampMarker.lid} select[name="bri"]`).prop('disabled', !server.override);
         }
-        break
-    case 'addError':
-        alert(msg.data.msg)
-        break
-    case 'addSuccess':
-        alert('Added')
-        break
+        break;
+    case 'notify':
+        pushMsg(msg.data);
+        break;
     }
 }
-var selectedParentMarker
-modifyParentMarker = function (cluster) {
-    if (Pmarkers.hasOwnProperty(cluster.cid)) {
-        Pmarkers[cluster.cid].setMap(null)
-    }
-    else {
-        isShowingLamps[cluster.cid] = false
-    }
-    var position = new google.maps.LatLng(cluster.loc.lat, cluster.loc.lng)
-    marker = Pmarkers[cluster.cid] = new google.maps.Marker({
-        position: position
-        , map: map
-        , title: 'CID: ' + cluster.cid.toString()
-        , icon: iconRoot + parentStatusIcon[cluster.status]
-    , })
-    google.maps.event.addListener(marker, 'click', (function (marker) {
-        return function () {
-            if (marker.hasOwnProperty('infoWindow')) {
-                marker.infoWindow.close()
-                delete marker.infoWindow
-                return
+var selectedTerminalMarker;
+
+function updateTerminal(terminal) {
+    if (!terminal.cid) return;
+    myTerm = Terminals[terminal.cid];
+    var props = ['loc', 'iid', 'status', 'ip'];
+    var applyChange = {
+        'loc': function (term) {
+            term.marker.setPosition(new google.maps.LatLng(term.loc.lat, term.loc.lng));
+        },
+        'iid': function (term) {
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='iid']`).text(`IID : ${term.iid}`);
+        },
+        'status': function (term) {
+            term.marker.setTitle(`${term.cid.toString()} | ${terminalStatusText[term.status]}`);
+            term.marker.setIcon(intIconRoot + terminalStatusIcon[term.status]);
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='status']`).text(`Status : ${terminalStatusText[term.status]}`);
+        },
+        'ip': function (term) {
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='ip']`).text(`IP : ${term.ip}`);
+        }
+    };
+    if (!myTerm) {
+        myTerm = {}
+        for (var i = 0; i < props.length; ++i) {
+            if (!terminal.hasOwnProperty(props[i])) {
+                // Todo: Ask server to send entire obj
+                return;
             }
-            marker.infoWindow = new google.maps.InfoWindow({
-                content: [`<div id="iP${cluster.cid}"><pre>`
-                    , `CID: ${cluster.cid}\n`
-                    , `IID: ${cluster.iid}\n`
-                    , `Status: ${parentStatusText[cluster.status]}\n`
-                    , `IP: ${cluster.ip}\n\n`
-                    , `Show Lamps <label class="switch"><input id="toggleLampView${cluster.cid}" type="checkbox"><div class="slider"></div></label>\n`
-                    , `<div id="bD_c${cluster.cid}" style="display: none">Brightness: <select name="bri" id="lB_c${cluster.cid}"><option value="-1" selected> </option><option value = "0">0</option>`
-                    , '<option value = "1">1</option><option value = "2">2</option>'
-                    , '<option value = "3">3</option></select>\n</div></pre>'
-                    , cluster.status === 1 ? '(Last known lamp status)' : ''
-                    , '</div>'
-                         ].join('')
-            })
-            marker.cid = cluster.cid
-            google.maps.event.addListener(marker.infoWindow, 'domready', function () {
-                if (selectedParentMarker && selectedParentMarker != marker) {
-                    if (isShowingLamps[selectedParentMarker.cid]) {
-                        ParentbPressed(selectedParentMarker.cid)
-                        isShowingLamps[selectedParentMarker.cid] = !isShowingLamps[selectedParentMarker.cid]
-                    }
-                }
-                if (selectedParentMarker && selectedParentMarker != marker && selectedParentMarker.infoWindow) {
-                    selectedParentMarker.infoWindow.close()
-                    delete selectedParentMarker.infoWindow
-                }
-                selectedParentMarker = marker
-                if (isShowingLamps[cluster.cid]) {
-                    $(`#bD_c${cluster.cid}`).show()
-                }
-                $(`#toggleLampView${cluster.cid}`).prop('checked', isShowingLamps[cluster.cid])
-                $(`#toggleLampView${cluster.cid}`).on('click', function () {
-                    ParentbPressed(cluster.cid)
-                    if (isShowingLamps[cluster.cid]) {
-                        $(`#bD_c${cluster.cid}`).hide()
-                    }
-                    else {
-                        $(`#bD_c${cluster.cid}`).show()
-                    }
-                    isShowingLamps[cluster.cid] = !isShowingLamps[cluster.cid]
-                })
-                if (!user.admin && !server.override) {
-                    $(`#lB_c${cluster.cid}`).prop('disabled', true)
-                }
-                else {
-                    $(`#lB_c${cluster.cid}`).change(function () {
-                        LampModifyByCid(cluster.cid, Number($(`#lB_c${cluster.cid}`).val()))
-                    })
-                }
-            })
-            google.maps.event.addListener(marker.infoWindow, 'closeclick', function () {
-                delete marker.infoWindow //bug much?
-            })
-            marker.infoWindow.open(map, marker)
+            myTerm[props[i]] = terminal[props[i]];
         }
-    }(marker)))
-}
-modifyLampMarker = function (lamp) {
-    if (!clusters.hasOwnProperty(lamp.cid)) {
-        clusters[lamp.cid] = {}
-        clusterMarkers[lamp.cid] = {}
-    }
-    if (clusterMarkers[lamp.cid].hasOwnProperty(lamp.lid)) {
-        var oLamp = clusters[lamp.cid][lamp.lid]
-        var oMarker = clusterMarkers[lamp.cid][lamp.lid]
-        if (lamp.loc == null) {
-            lamp.loc = oLamp.loc
-        }
-        if (lamp.status == null) {
-            lamp.status = oLamp.status
-        }
-        if (oLamp.loc.lat == lamp.loc.lat && oLamp.loc.lng == lamp.loc.lng) {
-            var iconPath = lamp.status === 0 ? briIconRoot + LampBrightnessIcon[lamp.bri] : iconRoot + LampStatusIcon[lamp.status]
-            oMarker.setIcon(iconPath)
-            if (oMarker.infoWindow) {
-                $(`#lB_c${lamp.cid}_l${lamp.lid}`).val(lamp.bri)
-                $(`#lS_c${lamp.cid}_l${lamp.lid}`).text(LampStatusText[lamp.status])
-            }
-            clusters[lamp.cid][lamp.lid] = lamp
-        }
-        else {
-            clusterMarkers[lamp.cid][lamp.lid].setMap(null)
-            clusters[lamp.cid][lamp.lid] = lamp
-            clusterMarkers[lamp.cid][lamp.lid] = makeLampMarker(lamp)
-        }
-    }
-    else {
-        clusters[lamp.cid][lamp.lid] = lamp
-        clusterMarkers[lamp.cid][lamp.lid] = makeLampMarker(lamp)
-    }
-}
-getLampIwContent = function (lamp) {
-    return [`<div id="iL${lamp.lid}"><pre>`
-              , `IID: ${lamp.iid}\n`
-              , `CID: ${lamp.cid}\n`
-              , `LID: ${lamp.lid}\n`
-              , `Status: <span id="lS_c${lamp.cid}_l${lamp.lid}">${LampStatusText[lamp.status]}</span>\n`
-              , `Brightness: <select name="bri" id="lB_c${lamp.cid}_l${lamp.lid}"><option value = "0">0</option>`
-              , '<option value = "1">1</option><option value = "2">2</option>'
-              , '<option value = "3">3</option></select>\n'
-              , '</pre></div>'].join('')
-}
-var selectedLampMarker
-makeLampMarker = function (lamp) {
-    var position = new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng)
-    var iconPath = lamp.status === 0 ? briIconRoot + LampBrightnessIcon[lamp.bri] : iconRoot + LampStatusIcon[lamp.status]
-    console.log(iconPath)
-    marker = new google.maps.Marker({
-        position: position
-        , map: map
-        , icon: iconPath
-        , title: 'LID: ' + lamp.lid.toString() + '\nIID: ' + lamp.iid.toString()
-    })
-    marker.cid = lamp.cid
-    marker.lid = lamp.lid
-    google.maps.event.addListener(marker, 'click', (function (marker) {
-        return function () {
-            if (marker.hasOwnProperty('infoWindow')) {
-                marker.infoWindow.close()
-                delete marker.infoWindow
-            }
-            else {
+        if (!terminal.loc.lat || !terminal.loc.lng || !terminal.cid) return;
+        myTerm.cid = terminal.cid;
+        marker = myTerm.marker = new google.maps.Marker({
+            position: new google.maps.LatLng(myTerm.loc.lat, myTerm.loc.lng),
+            map: map,
+            title: `${myTerm.cid.toString()} | ${terminalStatusText[myTerm.status]}`,
+            icon: intIconRoot + terminalStatusIcon[myTerm.status],
+        });
+        marker.cid = myTerm.cid;
+        google.maps.event.addListener(marker, 'click', (function (myTerm) {
+            return function () {
+                marker = myTerm.marker;
+                if (marker.hasOwnProperty('infoWindow')) {
+                    marker.infoWindow.close();
+                    delete marker.infoWindow;
+                    return;
+                }
                 marker.infoWindow = new google.maps.InfoWindow({
-                    content: getLampIwContent(lamp)
-                })
+                    content: `<div style="font-size:large" id="infoTerm${myTerm.cid}"> <label>CID: ${myTerm.cid}</label> <label name="iid" style="float:right;">IID: ${myTerm.iid}</label>` + `<br> <label name='status'>Status: ${terminalStatusText[myTerm.status]}</label> <br> <label name='ip'>IP: ${myTerm.ip} </label><br> <div >` + `Set brightness: <select name="bri" style="float:right;"> <option value="-1" selected> </option> <option val` + `ue="0">0</option> <option value="1">1</option> <option value="2">2</option> <option value="3">3</option> </select> </div> <br>` + `Show Lamps <label class="switch" style="float:right;"><input name="toggleLampView" type="checkbox"><div class="slider"></div></label><br></div>`
+                });
                 google.maps.event.addListener(marker.infoWindow, 'domready', function () {
-                    if (selectedLampMarker && selectedLampMarker != marker && selectedLampMarker.infoWindow) {
-                        selectedLampMarker.infoWindow.close()
-                        delete selectedLampMarker.infoWindow
+                    if (selectedTerminalMarker && selectedTerminalMarker != marker) {
+                        if (isShowingLamps[selectedTerminalMarker.cid]) {
+                            TerminalbPressed(selectedTerminalMarker.cid)
+                            isShowingLamps[selectedTerminalMarker.cid] = !isShowingLamps[selectedTerminalMarker.cid]
+                        }
                     }
-                    selectedLampMarker = marker
-                    $(`#lB_c${lamp.cid}_l${lamp.lid}`).val(lamp.bri)
-                    if (!user.admin && !server.override) {
-                        $(`#lB_c${lamp.cid}_l${lamp.lid}`).prop('disabled', true)
+                    if (selectedTerminalMarker && selectedTerminalMarker != marker && selectedTerminalMarker.infoWindow) {
+                        selectedTerminalMarker.infoWindow.close()
+                        delete selectedTerminalMarker.infoWindow
                     }
-                    else {
-                        $(`#lB_c${lamp.cid}_l${lamp.lid}`).change(function () {
-                            lamp.bri = Number($(`#lB_c${lamp.cid}_l${lamp.lid}`).val())
-                            
-                            LampModify(lamp)
-                        })
-                    }
+                    selectedTerminalMarker = marker
+                    $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('checked', isShowingLamps[myTerm.cid])
+                    $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).on('click', function () {
+                        TerminalbPressed(myTerm.cid)
+                        isShowingLamps[myTerm.cid] = !isShowingLamps[myTerm.cid]
+                    })
+                    if (!user.admin && !server.override) $(`#infoTerm${myTerm.cid} select[name="bri"]`).prop('disabled', true);
+                    else $(`#infoTerm${myTerm.cid} select[name="bri"]`).change(function () {
+                        LampModifyByCid(myTerm.cid, Number($(`#infoTerm${myTerm.cid} select[name="bri"]`).val()))
+                    });
                 })
                 google.maps.event.addListener(marker.infoWindow, 'closeclick', function () {
-                    marker.infoWindowShowing = false
                     delete marker.infoWindow //bug much?
                 })
                 marker.infoWindow.open(map, marker)
             }
-        }
-    }(marker)))
-    return marker
+        }(myTerm)));
+        Terminals[myTerm.cid] = myTerm;
+    } else {
+        for (var i = 0; i < props.length; ++i)
+            if (terminal.hasOwnProperty(props[i])) myTerm[props[i]] = terminal[props[i]];
+        for (var i = 0; i < props.length; ++i)
+            if (terminal.hasOwnProperty(props[i])) applyChange[props[i]](myTerm);
+    }
 }
-ParentbPressed = function (cid) {
+var selectedLampMarker;
+
+function updateLamp(lamp) {
+    if (!lamp.cid || !lamp.lid) return;
+    var props = ['loc', 'iid', 'status', 'bri'];
+    var applyChange = {
+        'loc': function (lamp) {
+            lamp.marker.setPosition(new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng));
+        },
+        'iid': function (lamp) {
+            if (lamp.marker.infoWindow) $(`#infolamp${lamp.cid} label[name='iid']`).text(`IID : ${lamp.iid}`);
+        },
+        'status': function (lamp) {
+            lamp.marker.setTitle(`${lamp.cid},${lamp.iid} | ${LampStatusText[lamp.status]}`);
+            lamp.marker.setIcon(intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]));
+            if (lamp.marker.infoWindow) $(`#infolamp${lamp.cid}, ${lamp.lid} label[name='status']`).text(`Status : ${LampStatusText[lamp.status]}`);
+        },
+        'bri': function (lamp) {
+            $(`#infoLamp${lamp.cid},${lamp.lid} select[name="bri"]`).val(lamp.bri);
+            lamp.marker.setIcon(intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]));
+        }
+    };
+    if (!clusters[lamp.cid]) clusters[lamp.cid] = {};
+    if (!clusters[lamp.cid].hasOwnProperty(lamp.lid)) {
+        myLamp = {}
+        for (var i = 0; i < props.length; ++i) {
+            if (!lamp.hasOwnProperty(props[i])) {
+                // Todo: Ask server to send entire obj
+                return;
+            }
+            myLamp[props[i]] = lamp[props[i]];
+        }
+        if (!lamp.loc.lat || !lamp.loc.lng || !lamp.cid || !lamp.lid) return;
+        myLamp.cid = lamp.cid;
+        myLamp.lid = lamp.lid;
+        marker = myLamp.marker = new google.maps.Marker({
+            position: new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng),
+            map: map,
+            icon: intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]),
+            title: `${lamp.cid.toString()}, ${lamp.iid.toString()} | ${LampStatusText[lamp.status]}`
+        });
+        marker.cid = lamp.cid;
+        marker.lid = lamp.lid;
+        google.maps.event.addListener(marker, 'click', (function (lamp) {
+            return function () {
+                marker = lamp.marker;
+                if (marker.hasOwnProperty('infoWindow')) {
+                    marker.infoWindow.close();
+                    delete marker.infoWindow;
+                } else {
+                    marker.infoWindow = new google.maps.InfoWindow({
+                        content: `<div style="font-size:large" id="infoLamp${lamp.cid},${lamp.lid}"> <label style="float:right;">CID: ${lamp.cid}</label> LID: ${lamp.lid} <br><label name="iid">IID: ${lamp.iid} </label><br>Status: <label name="status">${LampStatusText[lamp.status]}</label> <br> Brightness: <select name="bri" style="float:right;"> <option value="0">0</option> <option value="1">1</option> <option value="2">2</option> <option value="3">3</option> </select></div>`
+                    });
+                    google.maps.event.addListener(marker.infoWindow, 'domready', function () {
+                        if (selectedLampMarker && selectedLampMarker != marker && selectedLampMarker.infoWindow) {
+                            selectedLampMarker.infoWindow.close()
+                            delete selectedLampMarker.infoWindow
+                        }
+                        selectedLampMarker = marker
+                        var briSelector = $(`#infoLamp${lamp.cid},${lamp.lid} select[name="bri"]`);
+                        briSelector.val(lamp.bri);
+                        if (!user.admin && !server.override) {
+                            briSelector.prop('disabled', true);
+                        } else {
+                            briSelector.change(function () {
+                                lamp.bri = Number(briSelector.val());
+                                LampModify(lamp);
+                            });
+                        }
+                    });
+                    google.maps.event.addListener(marker.infoWindow, 'closeclick', function () {
+                        marker.infoWindowShowing = false
+                        delete marker.infoWindow //bug much?
+                    })
+                    marker.infoWindow.open(map, marker)
+                }
+            }
+        }(myLamp)));
+        clusters[myLamp.cid][myLamp.lid] = myLamp;
+    } else {
+        for (var i = 0; i < props.length; ++i)
+            if (lamp.hasOwnProperty(props[i])) myLamp[props[i]] = lamp[props[i]];
+        for (var i = 0; i < props.length; ++i)
+            if (lamp.hasOwnProperty(props[i])) applyChange[props[i]](myLamp);
+    }
+}
+TerminalbPressed = function (cid) {
     if (!isShowingLamps[cid]) {
         wsoc.send(makeMsg('addListener', {
-            'loc': 'lamps'
-            , 'cid': cid
+            'loc': 'lamps',
+            'cid': cid
         }))
-    }
-    else {
+    } else {
         wsoc.send(makeMsg('removeListener', {
-            'loc': 'lamps'
-            , 'cid': cid
+            'loc': 'lamps',
+            'cid': cid
         }))
-        for (var key in clusterMarkers[cid]) {
-            if (clusterMarkers[cid].hasOwnProperty(key)) {
-                clusterMarkers[cid][key].setMap(null)
-            }
-        }
-        delete clusterMarkers[cid]
+        for (var key in clusters[cid])
+            if (clusters[cid].hasOwnProperty(key)) clusters[cid][key].marker.setMap(null);
         delete clusters[cid]
     }
 }
 modifyCluster = function (clus) {
-    for (var lid in clusters[clus.cid]) {
+    var lamp = {
+        bri: clus.bri,
+        cid: clus.cid
+    };
+    for (var lid in clusters[clus.cid])
         if (clusters[clus.cid].hasOwnProperty(lid)) {
-            var lamp = clusters[clus.cid][lid]
-            lamp.bri = clus.bri
-            if (clusterMarkers[clus.cid].hasOwnProperty(lid)) {
-                var iconPath = lamp.status === 0 ? briIconRoot + LampBrightnessIcon[lamp.bri] : iconRoot + LampStatusIcon[lamp.status]
-                clusterMarkers[clus.cid][lid].setIcon(iconPath)
-            }
+            lamp.lid = lid;
+            updateLamp(lamp);
         }
-    }
-    if (selectedParentMarker != undefined && selectedParentMarker.cid == clus.cid) {
-        $(`#lB_c${clus.cid}`).val(clus.bri)
-    }
-    if (selectedLampMarker != undefined && selectedLampMarker.cid == clus.cid) {
-        $(`#lB_c${clus.cid}_l${selectedLampMarker.lid}`).val(clus.bri)
-    }
+    if (selectedTerminalMarker != undefined && selectedTerminalMarker.cid == clus.cid) $(`#infoTerm${clus.cid} select[name="bri"]`).val(clus.bri)
+    if (selectedLampMarker != undefined && selectedLampMarker.cid == clus.cid) $(`#infoLamp${clus.cid},${selectedLampMarker.lid} select[name="bri"]`).val(clus.bri);
 }
 LampModify = function (lamp) {
     wsoc.send(makeMsg('modObj', {
-        'type': 'lamp'
-        , 'obj': lamp
-    }))
+        type: LAMPOBJ,
+        [LAMPOBJ]: lamp
+    }));
 }
 LampModifyByCid = function (cid, val) {
     if (val == -1) {
-        return
+        return;
     }
     wsoc.send(makeMsg('modObj', {
-        type: 'cluster'
-        , obj: {
-            cid: cid
-            , bri: val
+        type: CLUSOBJ,
+        [CLUSOBJ]: {
+            cid: cid,
+            bri: val
         }
     }))
 }
 removeListenersBeforeClose = function () {
-        for (var key in isShowingLamps) {
-            if (isShowingLamps.hasOwnProperty(key)) {
-                wsoc.send(makeMsg('removeListener', {
-                    'loc': 'lamps'
-                    , 'cid': key
-                }))
-            }
+    for (var key in isShowingLamps) {
+        if (isShowingLamps.hasOwnProperty(key)) {
+            wsoc.send(makeMsg('removeListener', {
+                'loc': 'lamps',
+                'cid': key
+            }))
         }
-        wsoc.send(makeMsg('removeListener', {
-            'loc': 'parents'
-        }))
-        wsoc.send(makeMsg('removeListener', {
-            'loc': 'serverConfig'
-        }))
     }
-    //from: https://www.quirksmode.org/js/cookies.html
+    wsoc.send(makeMsg('removeListener', {
+        'loc': 'terminals'
+    }))
+    wsoc.send(makeMsg('removeListener', {
+        'loc': 'serverConfig'
+    }))
+}
+//from: https://www.quirksmode.org/js/cookies.html
 function createCookie(name, value, days) {
     if (days) {
         var date = new Date()
         date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000))
         var expires = " expires=" + date.toGMTString()
-    }
-    else var expires = ""
+    } else var expires = ""
     document.cookie = name + "=" + value + expires + " path=/"
 }
 

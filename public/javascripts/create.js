@@ -59,11 +59,11 @@ function eraseCookie(name) {
 process = function (data) {
     console.log(data.data)
     switch (data.type) {
-        case 'auth':
-            if (data.data.state === 'pass') {} else {
-                alert('Auth error! Try logging in again')
-            }
-            break
+    case 'auth':
+        if (data.data.state === 'pass') {} else {
+            alert('Auth error! Try logging in again')
+        }
+        break
     }
 }
 removeListenersBeforeClose = function () {

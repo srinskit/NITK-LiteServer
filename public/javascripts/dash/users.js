@@ -14,7 +14,7 @@ startWS = function () {
         new_uri = 'ws:';
     }
     new_uri += '//' + loc.host + '/';
-    new_uri += '?type=webDebug' + '&username=' + username + '&token=' + token;
+    new_uri += '?type=webclient' + '&username=' + username + '&token=' + token;
     wsoc = new WebSocket(new_uri)
     wsoc.onopen = function (event) {
         wsoc.onmessage = function (event) {
