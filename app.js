@@ -1,395 +1,707 @@
-var statusDelay = -1
-    //Don't exit on error
+/*jslint node: true */
+"use strict";
+// Don't exit on error
 process.on('uncaughtException', function (err) {
-    console.log(err.stack)
-})
-var express = require('express')
-var path = require('path')
-var favicon = require('serve-favicon')
-var morgan = require('morgan')
-var cookieParser = require('cookie-parser')
-var bodyParser = require('body-parser')
-var mongoose = require('mongoose')
-var passport = require('passport')
-var flash = require('connect-flash')
-var validator = require('express-validator')
-    //TODO find storage for session
-var session = require('express-session')
-var crypto = require('crypto')
-var winston = require('winston')
+    console.log(err.stack);
+});
+var AUTO = 'AUTO';
+var express = require('express');
+var path = require('path');
+var favicon = require('serve-favicon');
+var morgan = require('morgan');
+var cookieParser = require('cookie-parser');
+var bodyParser = require('body-parser');
+var mongoose = require('mongoose');
+var passport = require('passport');
+var flash = require('connect-flash');
+var validator = require('express-validator');
+var session = require('express-session');
+var crypto = require('crypto');
+var winston = require('winston');
 var moment = require('moment-timezone');
-moment.tz('Asia/Kolkata').format()
-myTimeStamp = function () {
-        return new Date().toLocaleString('en-GB', {
-            timezone: 'Asia/Kolkata'
+var User = require('./models/user.js');
+var ServerConfig = require('./models/serverConfig.js');
+var LampConfig = require('./models/lampConfig.js');
+var Lamp = require('./models/lamp.js');
+var Terminal = require('./models/terminal.js');
+var LAMP = new Lamp();
+var TERM = new Terminal();
+var LogMsg = require('./logMessages.js');
+// For India
+moment.tz('Asia/Kolkata').format();
+
+function myTimeStamp() {
+    return moment().format().slice(0, -6);
+}
+
+// Log to console and server.log
+// TODO custom level to log error.stack
+var log = new winston.Logger({
+    transports: [
+        new winston.transports.Console({
+            timestamp: myTimeStamp,
+            colorize: true
+        }), new winston.transports.File({
+            filename: 'server.log',
+            timestamp: myTimeStamp
         })
-    }
-//Log to console and server.log
-//TODO custom level to log error.stack
-var log = new(winston.Logger)({
-        transports: [
-      new(winston.transports.Console)({
-                timestamp: myTimeStamp
-                , colorize: true
-            })
-      , new(winston.transports.File)({
-                filename: 'server.log'
-                , timestamp: myTimeStamp
-            })
     ]
-    })
-//Don't exit on error
-log.exitOnError = false
-log.info('Started Server')
-//Connect Mongoose to MongoDB
-mongoose.Promise = global.Promise
-var dbConfig = require(path.join(__dirname, 'config', 'database.js'))
-    //todo handle db connect
+});
+// Don't exit on error
+log.exitOnError = false;
+// Connect Mongoose to MongoDB
+mongoose.Promise = global.Promise;
+var dbConfig = require(path.join(__dirname, 'config', 'database.js'));
+// https://stackoverflow.com/questions/11910842/mongoose-connection-models-need-to-always-run-on-open
 mongoose.connect(dbConfig.url, {
-        useMongoClient: true
-    }, function (err) {
-        if (err) {
-            log.error('Couldn\'t connect to DB at %s', dbConfig.url, {
-                stack: err.stack
-            })
-        }
-    })
-    //Configure Passport
-require(path.join(__dirname, 'config', 'passport'))(passport)
-var app = express()
-app.set('views', path.join(__dirname, 'views'))
-app.set('view engine', 'pug')
-app.use(favicon(path.join(__dirname, 'public', 'images', 'favicon.ico')))
-    //app.use(morgan('dev'))
+    useMongoClient: true
+}, function (err) {
+    if (err) {
+        log.error(LogMsg.dbConnectionError, AUTO, dbConfig.url, {
+            stack: err.stack
+        });
+        // process.exit(1)
+    }
+});
+var three = false,
+    two = false,
+    one = false;
+// Find last saved server config
+var sConfig;
+ServerConfig.findOne({}, function (err, config) {
+    if (err) {
+        log.error(LogMsg.dbNoServerConfig, AUTO);
+        sConfig = {
+            override: false
+        };
+        return;
+    }
+    sConfig = config;
+    if (sConfig.delayBetweenStatusChecks != -1) {
+        loadAllClusterIds(function () {
+            setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenStatusChecks);
+        });
+    }
+    three = true;
+});
+// Set all users offline
+User.update({}, {
+    online: false
+}, {
+    multi: true
+}, err => {
+    if (err) log.error('[%s] Failed to set users offline', AUTO);
+    else two = true;
+});
+// Set all terminals offline
+Terminal.update({}, {
+    online: false,
+    status: TERM.OFFLINE
+}, {
+    multi: true
+}, err => {
+    if (err) log.error('[%s] Failed to set terminals offline', AUTO);
+    else one = true;
+});
+// Block till initial setup
+// while (!three || !two || !one);
+log.info('Started Server');
+// Configure Passport
+require(path.join(__dirname, 'config', 'passport'))(passport);
+var app = express();
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'pug');
+app.use(favicon(path.join(__dirname, 'public', 'images', 'favicon.ico')));
+// app.use(morgan('dev'))
 app.use(bodyParser.urlencoded({
     extended: true
-}))
-app.use(bodyParser.json())
-app.use(validator())
-app.use(cookieParser())
-app.use(express.static(path.join(__dirname, 'public')))
+}));
+app.use(bodyParser.json());
+app.use(validator());
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-    secret: 'gFiwkbvvwk62KU3ZHgrk'
-    , resave: false
-    , saveUninitialized: false
-    , cookie: {
+    secret: 'gFiwkbvvwk62KU3ZHgrk',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
         maxAge: 7200000
     }
-}))
-app.use(flash())
-app.use(passport.initialize())
-app.use(passport.session())
-    //Router
-app.get('/', function (req, res, next) {
+}));
+app.use(flash());
+app.use(passport.initialize());
+app.use(passport.session());
+// Router
+app.get('/', function (req, res) {
     res.render('home', {
         isAuth: req.isAuthenticated()
-    })
-})
-app.get('/report', function (req, res, next) {
+    });
+});
+app.get('/report', function (req, res) {
     res.render('report', {
         isAuth: req.isAuthenticated()
-    })
-})
-app.get('/about', function (req, res, next) {
+    });
+});
+app.get('/about', function (req, res) {
     res.render('about', {
         isAuth: req.isAuthenticated()
-    })
-})
-app.get('/login', function (req, res, next) {
+    });
+});
+app.get('/login', function (req, res) {
     res.render('login', {
-        errorMsg: req.flash('errorMsg')
-        , successMsg: req.flash('successMsg')
-        , isAuth: req.isAuthenticated()
-    })
-})
+        errorMsg: req.flash('errorMsg'),
+        successMsg: req.flash('successMsg'),
+        isAuth: req.isAuthenticated()
+    });
+});
 app.post('/login', function (req, res, next) {
-    if (req.body.username != undefined && req.body.password != undefined && req.body.username.length > 0 && req.body.password.length > 0) {
+    if (req.body.username && req.body.password && req.body.username.length > 0 && req.body.password.length > 0) {
         passport.authenticate('local-login', function (err, user, info) {
             if (err) {
                 log.error('[%s] Passport error', req.body.username, {
                     stack: err.stack
-                })
-                res.redirect('login')
-                return
+                });
+                res.redirect('login');
+            } else if (!user) {
+                log.warn('[%s] Auth failed', req.body.username);
+                req.flash('errorMsg', info.errorMsg);
+                res.redirect('login');
+            } else {
+                req.logIn(user, function (err) {
+                    if (err) {
+                        log.error('[%s] Passport login error', req.body.username, {
+                            stack: err.stack
+                        });
+                        res.redirect('login');
+                    }
+                    log.info('[%s] Logged in', req.body.username);
+                    res.cookie('token', info.token, {
+                        maxAge: 7200000
+                    });
+                    res.cookie('username', user.username, {
+                        maxAge: 7200000
+                    });
+                    res.redirect('dash');
+                });
             }
-            if (!user) {
-                log.warn('[%s] Auth failed', req.body.username)
-                req.flash('errorMsg', info.errorMsg)
-                res.redirect('login')
-                return
-            }
-            req.logIn(user, function (err) {
-                if (err) {
-                    log.error('[%s] Passport login error', req.body.username, {
-                        stack: err.stack
-                    })
-                    res.redirect('login')
-                    return
-                }
-                log.info('[%s] Logged in', req.body.username)
-                res.cookie('token', info.token, {
-                    maxAge: 7200000
-                })
-                res.cookie('username', user.username, {
-                    maxAge: 7200000
-                })
-                res.redirect('dash')
-            })
-        })(req, res, next)
+        })(req, res, next);
+    } else {
+        log.warn('[%s] Invalid input to login form', req.body.username ? req.body.username : '');
+        req.flash('errorMsg', 'Invalid Creds');
+        res.redirect('login');
     }
-    else {
-        log.warn('[%s] Invalid input to login form', req.body.username != undefined ? req.body.username : '')
-        req.flash('errorMsg', 'Invalid Creds')
-        res.redirect('login')
-    }
-})
-app.get('/logout', isLoggedIn, function (req, res) {
-    var username = req.user.username
+});
+
+function getIpOfRequest(req) {
+    var temp = (req.headers['x-forwarded-for'] || req.connection.remoteAddress).split(':');
+    return temp[temp.length - 1];
+}
+
+function userIsLoggedIn(req, res, next) {
+    if (req.isAuthenticated()) return next();
+    log.warn('[%s] Attempted access without login', getIpOfRequest(req));
+    res.redirect('/');
+}
+
+app.get('/logout', userIsLoggedIn, function (req, res) {
+    var username = req.user.username;
     User.findOneAndUpdate({
         username: username
     }, {
-        token: ''
+        token: '',
+        loggedIn: false
     }, function (err) {
         if (err) {
             log.error('[%s] Logout error', username, {
                 stack: err.stack
-            })
-            req.flash('errorMsg', 'Logout failed')
-            res.redirect('/login')
+            });
+            req.flash('errorMsg', 'Logout failed');
+            res.redirect('/login');
+        } else {
+            log.info('[%s] Logged out', username);
+            req.logout();
+            req.flash('successMsg', 'Logout success');
+            res.cookie('token', '', {});
+            res.cookie('username', '', {});
+            res.redirect('/login');
         }
-        else {
-            log.info('[%s] Logged out', username)
-            req.logout()
-            req.flash('successMsg', 'Logout success')
-            res.cookie('token', '', {})
-            res.cookie('username', '', {})
-            res.redirect('/login')
-        }
-    })
-})
-app.get('/dash', isLoggedIn, function (req, res) {
+    });
+});
+app.get('/dash', userIsLoggedIn, function (req, res) {
     res.render('dash/dash', {
-        user: {
-            username: req.user.username
-            , admin: req.user.admin
-        }
-    })
-})
-app.get('/dash/logs', isAdmin, function (req, res) {
-    var hours
-    switch (req.query.period) {
-    case '1':
-    case '6':
-    case '24':
-    case '48':
-        hours = Number(req.query.period)
-        break
-    default:
-        hours = 6
-    }
-    var levels, level
+        user: req.user.secureMiniJsonify()
+    });
+});
+
+function userIsAdmin(req, res, next) {
+    if (req.isAuthenticated() && req.user.admin === true) return next();
+    log.warn('[%s] Attempted access without login/admin', req.isAuthenticated() ? req.user.username : getIpOfRequest(req));
+    if (req.isAuthenticated()) res.redirect('/dash');
+    else res.redirect('/');
+}
+
+app.get('/dash/logs', userIsAdmin, function (req, res) {
+    var fromDate, fromTime, untilDate, untilTime, ts = myTimeStamp();
+    // Todo validate with regex rather than length
+    if (req.query.fromDate && req.query.fromDate.length === 10) fromDate = req.query.fromDate;
+    else fromDate = ts.substr(0, 10);
+    if (req.query.untilDate && req.query.untilDate.length === 10) untilDate = req.query.untilDate;
+    else untilDate = ts.substr(0, 10);
+    if (req.query.fromTime && req.query.fromTime.length === 8) fromTime = req.query.fromTime;
+    else fromTime = '00:00:00';
+    if (req.query.untilTime && req.query.untilTime.length === 8) untilTime = req.query.untilTime;
+    else untilTime = '23:59:59';
+    console.log(fromDate, fromTime);
+    console.log(untilDate, untilTime);
+    var levels, level, options = {
+        from: fromDate + 'T' + fromTime,
+        until: untilDate + 'T' + untilTime,
+        limit: 50,
+        order: 'desc'
+    };
     switch (req.query.level) {
-    case 'all':
-        levels = {
-            info: true
-            , error: true
-        }
-        level = 'all'
-        break
-    case 'info':
-        levels = {
-            info: true
-        }
-        level = 'info'
-        break
-    case 'error':
-        levels = {
-            error: true
-        }
-        level = 'error'
-        break
-    default:
-        levels = {
-            info: true
-            , error: true
-        }
-        level = 'all'
-    }
-    var options = {
-        from: new Date - hours * 60 * 60 * 1000
-        , until: new Date
-        , limit: 100
-        , order: 'desc'
+        case 'all':
+            levels = {
+                info: true,
+                error: true
+            };
+            level = 'all';
+            break;
+        case 'info':
+            levels = {
+                info: true
+            };
+            level = 'info';
+            break;
+        case 'error':
+            levels = {
+                error: true
+            };
+            level = 'error';
+            break;
+        default:
+            levels = {
+                info: true,
+                error: true
+            };
+            level = 'all';
     }
     log.query(options, function (err, results) {
         if (err) {
-            log.error('[%s] Log query error', req.user.username)
-            return
+            log.error('[%s] Log query error', req.user.username);
+            return;
         }
-        //Todo Better level selection
-        logs = []
+        // Todo Better level selection
+        var logs = [];
         results.file.forEach(function (log) {
             if (levels[log.level]) {
-                logs.push(log)
+                logs.push(log);
             }
-        })
+        });
         res.render('dash/logs', {
-            user: {
-                username: req.user.username
-                , admin: req.user.admin
-            }
-            , vars: {
-                period: hours
-                , level: level
-            }
-            , logs: logs
-        })
-    })
-})
-app.get('/dash/load', ifOverride, function (req, res) {
+            user: req.user.secureMiniJsonify(),
+            vars: {
+                fromDate: fromDate,
+                fromTime: fromTime,
+                untilDate: untilDate,
+                untilTime: untilTime,
+                level: level
+            },
+            logs: logs
+        });
+    });
+});
+
+function serverInOverride(req, res, next) {
+    if (req.isAuthenticated() && (req.user.admin === true || sConfig.override === true)) return next();
+    log.warn('[%s] Unauthorised activity where override needed', req.isAuthenticated() ? req.user.username : getIpOfRequest(req));
+    if (req.isAuthenticated()) res.redirect('/dash');
+    else res.redirect('/');
+}
+
+app.get('/dash/load', serverInOverride, function (req, res) {
     LampConfig.find({}, ['name', '_id'], function (err, configs) {
         if (err) {
             log.error('[%s] Error getting configs', req.user.username, {
                 stack: err.stack
-            })
-            return
+            });
+            return;
         }
         res.render('dash/load', {
-            user: {
-                username: req.user.username
-                , admin: req.user.admin
+            user: req.user.secureMiniJsonify(),
+            configs: configs,
+            msg: req.flash('msg')
+        });
+    });
+});
+
+function saveCurrentConfig(name, username) {
+    var config = {
+        name: name,
+        author: username
+    };
+    config.terminals = [];
+    Terminal.find({}, ['lamps', 'cid']).populate('lamps').exec(function (err, clusters) {
+        if (err) {
+            log.error('[%s] Couldn\'t get current config %s', username, name, {
+                stack: err.stack
+            });
+            return;
+        }
+        clusters.forEach(function (cluster) {
+            var mini = true,
+                commonBri = null,
+                foo = [];
+            cluster.lamps.forEach(function (lamp) {
+                foo.push({
+                    lamp: lamp._id,
+                    bri: lamp.bri
+                });
+                if (commonBri === null) {
+                    commonBri = lamp.bri;
+                } else {
+                    if (commonBri !== lamp.bri) {
+                        mini = false;
+                    }
+                }
+            });
+            if (mini) {
+                config.terminals.push({
+                    cid: cluster.cid,
+                    bri: commonBri,
+                    lamps: []
+                });
+            } else {
+                config.terminals.push({
+                    cid: cluster.cid,
+                    bri: -1,
+                    lamps: foo
+                });
             }
-            , configs: configs
-            , msg: req.flash('msg')
-        })
-    })
-})
-app.post('/dash/load', ifOverride, function (req, res) {
-    var action = req.body.submit
-    switch (action) {
-    case 'Save':
-        var configName = req.body.configName
-        if (configName != undefined && configName.length > 0) {
-            log.info('[%s] Saved config %s', req.user.username, configName)
-            saveCurrentConfig(configName, req.user.username)
-            req.flash('msg', 'Saved')
-            res.redirect('/dash/load')
-        }
-        else {
-            log.warn('[%s] Invalid config name %s', req.user.username, configName)
-            req.flash('msg', 'Error')
-            res.redirect('/dash/load')
-        }
-        break
-    case 'Load':
-        var configID = req.body.configID
-        if (configID != undefined) {
-            LampConfig.findOne({
-                _id: configID
-            }).populate('terminals.lamps.lamp').exec(function (err, config) {
+        });
+        config = new LampConfig(config);
+        config.save(function (err) {
+            if (err) {
+                log.error('[%s] Couldn\'t save config %s', username, name, {
+                    stack: err.stack
+                });
+            }
+        });
+    });
+}
+
+//Clients listening to status of all terminals
+var terminalListeners = [];
+//Clients listening to cluster by cid
+var clusterListeners = {};
+var serverConfigListeners = [];
+var userStatusListeners = [];
+var WEBCLIENT = 'webclient',
+    TERMINAL = 'terminal',
+    LAMPOBJ = 'lamp',
+    TERMOBJ = 'terminal',
+    CLUSOBJ = 'cluster';
+
+function postSendCallBack(err) {
+    if (err) {
+        log.error('[] Couldn\'t send msg', {
+            stack: err.stack
+        });
+    }
+}
+
+function makeJsonMsg(type, data) {
+    return {
+        type: type,
+        data: data
+    };
+}
+
+function makeStringMsg(type, data) {
+    return JSON.stringify({
+        type: type,
+        data: data
+    });
+}
+
+function nBit(num, n) {
+    var ret = [],
+        i;
+    for (i = 0; i < n; i += 1) {
+        ret.push((num % 2 === 1) ? '1' : '0');
+        num = Math.floor(num / 2);
+    }
+    return ret.reverse().join('');
+}
+
+function makeBits(msg) {
+    var bStream = '';
+    switch (msg.type) {
+        //override
+        case LAMPOBJ:
+            bStream += '10000';
+            bStream += nBit(msg.data.lamp.iid, 10);
+            bStream += '0';
+            bStream += nBit(msg.data.lamp.bri, 2);
+            bStream += nBit(0, 11);
+            break;
+        //sync
+        case 'sync':
+            bStream += '01000';
+            bStream += nBit(0, 10);
+            bStream += '0';
+            bStream += nBit(0, 2);
+            bStream += nBit(msg.data.hour, 5);
+            bStream += nBit(msg.data.minute, 6);
+            break;
+        //broadcast
+        case CLUSOBJ:
+            bStream += '00100';
+            bStream += nBit(0, 10);
+            bStream += '0';
+            bStream += nBit(msg.data.clus.bri, 2);
+            bStream += nBit(0, 11);
+            break;
+        //status
+        case 'status':
+            bStream += '00010';
+            bStream += nBit(msg.data.lamp.iid, 10);
+            bStream += '0';
+            bStream += nBit(0, 13);
+            break;
+    }
+    return makeStringMsg('bs', {
+        bs: bStream
+    });
+}
+
+function toClusterListeners(cid, msg) {
+    if (clusterListeners.hasOwnProperty(cid)) {
+        clusterListeners[cid].forEach(function (client) {
+            if (client.type === WEBCLIENT) client.send(JSON.stringify(msg), postSendCallBack);
+            else if (client.type === TERMINAL) client.send(makeBits(msg), postSendCallBack);
+        });
+    }
+}
+
+function toTerminalListeners(msg) {
+    terminalListeners.forEach(function (client) {
+        if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
+    });
+}
+
+function sendTerminals(client) {
+    if (client.type === WEBCLIENT) {
+        Terminal.find({}, ['iid', 'cid', 'status', 'ip', 'loc', 'online'], (err, terms) => {
+            if (err) {
+                log.error('[%s] Couldn\'t get terms', client.username, {
+                    stack: err.stack
+                });
+                return;
+            }
+            terms.forEach(term => {
+                client.send(makeStringMsg(TERMOBJ, {
+                    [TERMOBJ]: term.secureJsonify()
+                }), postSendCallBack);
+            });
+        });
+    }
+}
+
+function sendCluster(cid, client) {
+    if (client.type === WEBCLIENT || client.type === TERMINAL) {
+        Terminal.findOne({
+            'cid': cid
+        }, ['lamps']).populate('lamps').exec(function (err, terminal) {
+            if (err) {
+                log.error('[%s] Couldn\'t get cluster', client.username, {
+                    stack: err.stack
+                });
+                return;
+            }
+            terminal.lamps.forEach(function (lamp) {
+                if (client.type === WEBCLIENT) client.send(makeStringMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp
+                }), postSendCallBack);
+                else if (client.type === TERMINAL) client.send(makeBits(makeJsonMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp
+                })), postSendCallBack);
+            });
+        });
+    }
+}
+
+function removeTerminalsListener(client) {
+    if (client === undefined) return;
+    var index = terminalListeners.indexOf(client);
+    if (index > -1) terminalListeners.splice(index, 1);
+}
+
+function removeClusterListener(cid, client) {
+    if (!client || !clusterListeners[cid]) return;
+    var index = clusterListeners[cid].indexOf(client);
+    if (index > -1) clusterListeners[cid].splice(index, 1);
+}
+
+function removeSConfigListener(client) {
+    if (!client) return;
+    var index = serverConfigListeners.indexOf(client);
+    if (index > -1) serverConfigListeners.splice(index, 1);
+}
+
+function removeUserStatusListener(client) {
+    if (!client) return;
+    var index = userStatusListeners.indexOf(client);
+    if (index > -1) userStatusListeners.splice(index, 1);
+}
+
+function loadConfig(config, username) {
+    config.terminals.forEach(function (terminal) {
+        if (terminal.bri !== -1) {
+            Terminal.findOne({
+                cid: terminal.cid
+            }, ['lamps']).populate('lamps').exec(function (err, cluster) {
                 if (err) {
-                    log.error('[%s] Couldn\'t find config %s', req.user.username, configID, {
+                    log.error('[%s] Couldn\'t get cluster', username, {
                         stack: err.stack
-                    })
-                    req.flash('msg', 'Error')
-                    res.redirect('/dash/load')
+                    });
+                    return;
                 }
-                else {
-                    log.info('[%s] loaded config %s', req.user.username, config.name)
-                    req.flash('msg', 'Sent request')
-                    res.redirect('/dash/load')
-                    loadConfig(config, req.user.username)
-                }
-            })
+                cluster.lamps.forEach(function (lamp) {
+                    lamp.bri = terminal.bri;
+                    lamp.save();
+                });
+                toClusterListeners(terminal.cid, makeJsonMsg(CLUSOBJ, {
+                    CLUSOBJ: {
+                        cid: terminal.cid,
+                        bri: terminal.bri
+                    }
+                }));
+            });
+        } else {
+            terminal.lamps.forEach(function (lampObj) {
+                lampObj.lamp.bri = lampObj.bri;
+                lampObj.lamp.save();
+                toClusterListeners(terminal.cid, makeJsonMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lampObj.lamp
+                }));
+            });
         }
-        else {
-            log.warn('[%s] Invalid config ID %s', req.user.username, configID)
-            req.flash('msg', 'Error')
-            res.redirect('/dash/load')
-        }
-        break
-    case 'Remove':
-        var array = req.body.remove
-        if (array != undefined && array.length > 0) {
-            LampConfig.find({
-                _id: {
-                    $in: array
-                }
-            }, function (err, configs) {
-                if (err) {
-                    log.error('[%s] Couldn\'t find configs %s', req.user.username, array.toString())
-                    req.flash('msg', 'Error')
-                    res.redirect('/dash/load')
-                }
-                else {
-                    configs.forEach(function (config) {
-                        //fix me userDoc remove failure
-                        config.remove(function (err) {
-                            if (err) {
-                                log.error('[%s] Error while removing config %s', req.user.username, config.name, {
-                                    stack: err.stack
-                                })
-                            }
+    });
+}
+
+app.post('/dash/load', serverInOverride, function (req, res) {
+    var action = req.body.submit,
+        configID = req.body.configID,
+        configName = req.body.configName;
+    switch (action) {
+        case 'Save':
+            if (configName !== undefined && configName.length > 0) {
+                log.info('[%s] Saved config %s', req.user.username, configName);
+                saveCurrentConfig(configName, req.user.username);
+                req.flash('msg', 'Saved');
+                res.redirect('/dash/load');
+            } else {
+                log.warn('[%s] Invalid config name %s', req.user.username, configName);
+                req.flash('msg', 'Error');
+                res.redirect('/dash/load');
+            }
+            break
+        case 'Load':
+            if (configID != undefined) {
+                LampConfig.findOne({
+                    _id: configID
+                }).populate('terminals.lamps.lamp').exec(function (err, config) {
+                    if (err) {
+                        log.error('[%s] Couldn\'t find config %s', req.user.username, configID, {
+                            stack: err.stack
                         })
-                    })
-                    log.info('[%s] Removed configs %s', req.user.username, array.toString())
-                    req.flash('msg', 'Removed')
-                    res.redirect('/dash/load')
-                }
-            })
-        }
-        else {
-            log.warn('[%s] Invalid config ID %s', req.user.username, configID)
+                        req.flash('msg', 'Error')
+                        res.redirect('/dash/load')
+                    } else {
+                        log.info('[%s] loaded config %s', req.user.username, config.name)
+                        req.flash('msg', 'Sent request')
+                        res.redirect('/dash/load')
+                        loadConfig(config, req.user.username)
+                    }
+                })
+            } else {
+                log.warn('[%s] Invalid config ID %s', req.user.username, configID)
+                req.flash('msg', 'Error')
+                res.redirect('/dash/load')
+            }
+            break
+        case 'Remove':
+            var array = req.body.remove
+            if (array != undefined && array.length > 0) {
+                LampConfig.find({
+                    _id: {
+                        $in: array
+                    }
+                }, function (err, configs) {
+                    if (err) {
+                        log.error('[%s] Couldn\'t find configs %s', req.user.username, array.toString())
+                        req.flash('msg', 'Error')
+                        res.redirect('/dash/load')
+                    } else {
+                        configs.forEach(function (config) {
+                            // fix me userDoc remove failure
+                            config.remove(function (err) {
+                                if (err) {
+                                    log.error('[%s] Error while removing config %s', req.user.username, config.name, {
+                                        stack: err.stack
+                                    })
+                                }
+                            })
+                        })
+                        log.info('[%s] Removed configs %s', req.user.username, array.toString())
+                        req.flash('msg', 'Removed')
+                        res.redirect('/dash/load')
+                    }
+                })
+            } else {
+                log.warn('[%s] Invalid config ID %s', req.user.username, configID)
+                req.flash('msg', 'Error')
+                res.redirect('/dash/load')
+            }
+            break
+        default:
+            log.warn('[%s] Invalid action %s', req.user.username, action)
             req.flash('msg', 'Error')
             res.redirect('/dash/load')
-        }
-        break
-    default:
-        log.warn('[%s] Invalid action %s', req.user.username, action)
-        req.flash('msg', 'Error')
-        res.redirect('/dash/load')
     }
 })
-app.get('/dash/map', isLoggedIn, function (req, res) {
+app.get('/dash/map', userIsLoggedIn, function (req, res) {
     res.render('dash/map', {
-        user: {
-            username: req.user.username
-            , admin: req.user.admin
-        }
-        , server: {
-            override: sConfig.override
-        }
+        user: req.user.secureMiniJsonify(),
+        server: sConfig.miniJsonify()
     })
 })
-app.get('/dash/admin', isAdmin, function (req, res) {
+app.get('/dash/admin', userIsAdmin, function (req, res) {
     res.render('dash/admin', {
-        user: {
-            username: req.user.username
-            , admin: req.user.admin
-        }
+        user: req.user.secureMiniJsonify(),
+        sConfig: sConfig.secureJsonify()
     })
 })
-app.get('/dash/admin/create', isAdmin, function (req, res, next) {
+app.get('/dash/admin/create', userIsAdmin, function (req, res, next) {
     res.render('create', {
-        errorMsg: req.flash('errorMsg')
-        , successMsg: req.flash('successMsg')
+        errorMsg: req.flash('errorMsg'),
+        successMsg: req.flash('successMsg')
     })
 })
-
-app.post('/dash/admin/create', isAdmin, function (req, res, next) {
+app.post('/dash/admin/create', userIsAdmin, function (req, res, next) {
     if (req.body.rpassword != undefined && req.body.password != undefined && req.body.username != undefined) {
         log.info('[%s] attempted create for %s', req.user.username, req.body.username)
-        create(req, function () {
+        registerUser(req, function () {
             res.redirect('create')
         })
-    }
-    else {
+    } else {
         log.error('[%s] Invalid input for create %s', req.user.username, req.body.username)
         req.flash('errorMsg', 'Invalid Input')
         return res.redirect('create')
     }
 })
-app.get('/dash/admin/users', isAdmin, function (req, res, next) {
+app.get('/dash/admin/users', userIsAdmin, function (req, res, next) {
     User.find({}, ['username', 'admin', 'online'], function (err, users) {
         if (err) {
             log.error('[%s] Error getting users list', req.user.username, {
@@ -398,15 +710,12 @@ app.get('/dash/admin/users', isAdmin, function (req, res, next) {
             return
         }
         res.render('dash/users', {
-            user: {
-                username: req.user.username
-                , admin: req.user.admin
-            }
-            , users: users
+            user: req.user.secureMiniJsonify(),
+            users: users
         })
     })
 })
-app.post('/dash/admin/users', isAdmin, function (req, res, next) {
+app.post('/dash/admin/users', userIsAdmin, function (req, res, next) {
     var array = req.body.deadmin
     if (array && array.length > 0) {
         User.update({
@@ -479,96 +788,139 @@ app.post('/dash/admin/users', isAdmin, function (req, res, next) {
     }
     res.redirect('/dash/admin/users')
 })
+app.post('/register_device', function (req, res, next) {
+    if (req.body.username != undefined && req.body.password != undefined && req.body.username.length > 0 && req.body.password.length > 0) {
+        passport.authenticate('local-login', function (err, user, info) {
+            if (err) {
+                log.error('[%s] Passport error', req.body.username, {
+                    stack: err.stack
+                });
+                res.end('service error');
+                return;
+            }
+            if (!user) {
+                log.warn('[%s] Auth failed for registerDevice', req.body.username);
+                res.end('failed');
+                return;
+            }
+            if (user.admin !== true) {
+                log.warn('[%s] Unauthorised activity where admin needed', req.body.username);
+                res.end('failed');
+                return;
+            }
+            registerDevice(req, res);
+        })(req, res, next)
+    } else {
+        res.end('failed');
+    }
+});
 app.use(function (req, res, next) {
     var err = new Error('Not Found')
     err.status = 404
     next(err)
-})
+});
 app.use(function (err, req, res, next) {
-    res.locals.message = err.message
-    res.locals.error = req.app.get('env') === 'development' ? err : {}
-    res.status(err.status || 500)
-    res.render('error')
-})
+    res.locals.message = err.message;
+    res.locals.error = req.app.get('env') === 'development' ? err : {};
+    res.status(err.status || 500);
+    res.render('error');
+});
 
-function isLoggedIn(req, res, next) {
-    if (req.isAuthenticated()) return next()
-    var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress
-    log.warn('[%s] Unauthorised activity where loggin needed', ip)
-    res.redirect('/')
-}
-
-function ifOverride(req, res, next) {
-    if (req.isAuthenticated() && (req.user.admin || sConfig.override)) return next()
-    var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress
-    log.warn('[%s] Unauthorised activity where override needed', req.isAuthenticated() ? req.user.username : ip)
-    if (req.isAuthenticated()) {
-        res.redirect('/dash')
+function registerDevice(req, res) {
+    var dev = JSON.parse(req.body.dev);
+    if (!dev.username.match(/^[0-9a-z]+$/)) {
+        res.end('failed');
+        return;
     }
-    else {
-        res.redirect('/')
-    }
-}
-
-function isAdmin(req, res, next) {
-    if (req.isAuthenticated() && req.user.admin) return next()
-    var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress
-    log.warn('[%s] Unauthorised activity where admin needed', req.isAuthenticated() ? req.user.username : ip)
-    if (req.isAuthenticated()) {
-        res.redirect('/dash')
-    }
-    else {
-        res.redirect('/')
-    }
-}
-
-create = function (req, done) {
-        var username = req.body.username
-        var password = req.body.password
-        if (!username.match(/^[0-9a-z]+$/)) {
-            req.flash('errorMsg', 'Check username')
-            done()
-            return
+    Terminal.findOne({
+        cid: dev.cid
+    }, function (err, terminal) {
+        if (err) {
+            log.error('[%s] Error checking terminals %s', req.body.username, dev.username, {
+                stack: err.stack
+            });
+            res.end('failed');
+            return;
         }
-        if (password !== req.body.rpassword) {
-            req.flash('errorMsg', 'Passwords don\'t match')
-            done()
-            return
+        if (!terminal) {
+            log.warn('[%s] Attempt to register un-mapped terminal %s', req.body.username, dev.username);
+            res.end('failed');
+            return;
         }
-        User.findOne({
-            'username': username
-        }, function (err, user) {
+        if (terminal.registered()) {
+            log.warn('[%s] Attempt to register already registered device %s', req.body.username, dev.username);
+            res.end('failed');
+            return;
+        }
+        terminal.username = dev.username;
+        terminal.password = terminal.generateHash(dev.password);
+        terminal.enabled = true;
+        // TODO Validate more
+        terminal.save(function (err) {
             if (err) {
-                log.error('[%s] Error checking for existing user %s', req.user.username, username, {
+                log.error('[%s] Error saving new user %s', req.body.username, dev.username, {
+                    stack: err.stack
+                });
+                res.end('failed');
+                return;
+            }
+            log.info('[%s] Registered terminal %s', req.body.username, dev.username);
+            res.end('success');
+            toTerminalListeners(makeStringMsg(TERMOBJ, {
+                [TERMOBJ]: terminal.secureJsonify()
+            }));
+        });
+    });
+}
+
+function registerUser(req, done) {
+    var username = req.body.username
+    var password = req.body.password
+    if (!username.match(/^[0-9a-z]+$/)) {
+        req.flash('errorMsg', 'Check username')
+        done()
+        return
+    }
+    if (password !== req.body.rpassword) {
+        req.flash('errorMsg', 'Passwords don\'t match')
+        done()
+        return
+    }
+    User.findOne({
+        'username': username
+    }, function (err, user) {
+        if (err) {
+            log.error('[%s] Error checking for existing user %s', req.user.username, username, {
+                stack: err.stack
+            })
+            req.flash('errorMsg', 'DB error')
+            done()
+            return
+        }
+        if (user) {
+            req.flash('errorMsg', 'Username already taken')
+            done()
+            return
+        }
+        var newUser = new User()
+        newUser.username = username
+        newUser.password = newUser.generateHash(password)
+        newUser.initialiseAndCheck()
+        newUser.save(function (err) {
+            if (err) {
+                req.flash('errorMsg', 'DB error')
+                log.error('[%s] Error saving new user %s', req.user.username, username, {
                     stack: err.stack
                 })
-                req.flash('errorMsg', 'DB error')
-                done()
-                return
+            } else {
+                req.flash('successMsg', 'Done!')
+                log.info('[%s] Registered user %s', req.user.username, username);
             }
-            if (user) {
-                req.flash('errorMsg', 'Username already taken')
-                done()
-                return
-            }
-            var newUser = new User()
-            newUser.setDefaultRight()
-            newUser.username = username
-            newUser.password = newUser.generateHash(password)
-            newUser.save(function (err) {
-                if (err) {
-                    req.flash('errorMsg', 'DB error')
-                    log.error('[%s] Error saving new user %s', req.user.username, username, {
-                        stack: err.stack
-                    })
-                }
-                else {
-                    req.flash('successMsg', 'Done!')
-                }
-                done()
-            })
+            done()
         })
-    }
+    })
+}
+
 var debug = require('debug')('nodeserver:server')
 var http = require('http')
 var port = normalizePort(process.env.PORT || '80')
@@ -598,16 +950,16 @@ function onError(error) {
     }
     var bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port
     switch (error.code) {
-    case 'EACCES':
-        console.error(bind + ' requires elevated privileges')
-        process.exit(1)
-        break
-    case 'EADDRINUSE':
-        console.error(bind + ' is already in use')
-        process.exit(1)
-        break
-    default:
-        throw error
+        case 'EACCES':
+            console.error(bind + ' requires elevated privileges')
+            process.exit(1)
+            break
+        case 'EADDRINUSE':
+            console.error(bind + ' is already in use')
+            process.exit(1)
+            break
+        default:
+            throw error
     }
 }
 
@@ -616,51 +968,25 @@ function onListening() {
     var bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port
     debug('Listening on ' + bind)
 }
-//-----------------------------------------------------------------------------------------
+
 var schedule = require('node-schedule')
 var WebSocketServer = require('ws').Server
-var Parent = require('./models/parent.js')
-var LampCluster = require('./models/lampCluster.js')
-var Lamp = require('./models/lamp.js')
-var User = require('./models/user.js')
-var ServerConfig = require('./models/serverConfig.js')
 var Url = require('url')
-    //Find last saved server config
-var sConfig
-ServerConfig.findOne({}, function (err, config) {
-        if (err) {
-            log.error('Couldn\'t find any server config')
-            sConfig = {
-                override: false
-            }
-            return
-        }
-        sConfig = config
-    })
-    //Make all users offline
-User.update({}, {
-        online: false
-    }, {
-        multi: true
-    }, function (err) {})
-    //FIX ME Check if client is connected
 var wss = new WebSocketServer({
-    server: server
-    , path: '/'
+    server: server,
+    path: '/'
 })
-webDebug = 'webDebug', terminal = 'terminal'
-    //Module to give unique id to sockets v1 is timestamp based
+//Module to give unique id to sockets v1 is timestamp based
 var uuid = require('uuid/v1')
-    //Web clients by username(multiple connections supported)
-var webClients = {}
-    //Terminal clients by cid
-var terminalClients = {}
-    //Add user to webClients
-addUser = function (client) {
-    if (!webClients.hasOwnProperty(client.username)) {
-        webClients[client.username] = {}
-    }
-    webClients[client.username][client.id] = true
+//Web clients by username(multiple connections supported)
+var webClients = {};
+//Terminal clients by cid
+var terminalClients = {};
+
+//Add user to webClients
+function addUser(client) {
+    if (!webClients.hasOwnProperty(client.username)) webClients[client.username] = {};
+    webClients[client.username][client.id] = true;
     if (Object.keys(webClients[client.username]).length <= 1) {
         User.update({
             username: client.username
@@ -670,829 +996,666 @@ addUser = function (client) {
             if (err) {
                 log.error('[%s] Error updating user status', client.username, {
                     stack: err.stack
-                })
+                });
             }
-        })
-        userStatusListeners.forEach(function (lis) {
-            lis.send(makeMsg('userStatus', {
-                username: client.username
-                , online: true
-            }), postSendCallBack)
-        })
+            userStatusListeners.forEach(function (lis) {
+                lis.send(makeStringMsg('userStatus', {
+                    user: {
+                        username: client.username,
+                        online: true
+                    }
+                }), postSendCallBack);
+            });
+        });
     }
 }
-removeUser = function (client) {
-    delete webClients[client.username][client.id]
+
+function removeUser(client) {
+    delete webClients[client.username][client.id];
     if (Object.keys(webClients[client.username]).length <= 0) {
         User.update({
             username: client.username
         }, {
             online: false
-        }, function (err) {})
-        userStatusListeners.forEach(function (lis) {
-            lis.send(makeMsg('userStatus', {
-                username: client.username
-                , online: false
-            }), postSendCallBack)
-        })
+        }, function (err) {
+            userStatusListeners.forEach(function (lis) {
+                lis.send(makeStringMsg('userStatus', {
+                    user: {
+                        username: client.username,
+                        online: false
+                    }
+                }), postSendCallBack);
+            });
+        });
     }
 }
-addTerminal = function (client) {
-    terminalClients[client.cid] = client
+
+function addTerminal(client) {
+    terminalClients[client.cid] = client;
 }
-removeTerminal = function (client) {
-    removeLampClusterListener(client.cid, client)
-    delete terminalClients[client.cid]
+
+function removeTerminal(client) {
+    removeClusterListener(client.cid, client);
+    delete terminalClients[client.cid];
 }
-wss.on('connection', function (client, req) {
-        var cred = new Url.parse(req.url, true).query
-        var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress
-        ip = ip.split(':')
-        ip = ip[ip.length - 1]
+
+function onAuth(cred, client, pass, fail) {
+    if (cred.type == TERMINAL) {
+        var failedMsg = '[%s] Failed to auth terminal to socketServer',
+            successMsg = '[%s] Terminal auth to socketServer';
+        Terminal.findOne({
+            username: cred.username
+        }, ['password', 'cid'], function (err, terminal) {
+            if (err) {
+                log.error(failedMsg, cred.username, {
+                    stack: err.stack
+                });
+                return fail(client);
+            }
+            if (!terminal || !terminal.validPassword(String(cred.password))) {
+                log.warn(failedMsg, cred.username);
+                return fail(client);
+            }
+            terminal.ip = cred.ip;
+            terminal.status = TERM.ONLINE;
+            terminal.save(err => {
+                client.id = uuid();
+                client.username = cred.username;
+                client.cid = terminal.cid;
+                client.type = cred.type;
+                client.send(makeStringMsg('auth', {
+                    state: 'pass'
+                }), postSendCallBack);
+                addTerminal(client);
+                toTerminalListeners(makeStringMsg(TERMOBJ, {
+                    [TERMOBJ]: terminal.secureJsonify()
+                }));
+                log.info(successMsg, client.username);
+                return pass(client);
+            });
+        });
+    } else if (cred.type == WEBCLIENT) {
+        var failedMsg = '[%s] Failed to auth user to socketServer',
+            successMsg = '[%s] User auth to socketServer'
         User.findOne({
             username: cred.username
         }, function (err, user) {
             if (err) {
-                log.error('[%s] Failed to find user for soc auth', cred.username, {
+                log.error(failedMsg, cred.username, {
                     stack: err.stack
                 })
-                return
+                return fail(client);
             }
-            if (!user) {
-                log.warn('[%s] Failed to find user for soc auth', cred.username)
-                return
+            if (!user || !user.validToken(cred.token)) {
+                log.warn(failedMsg, cred.username);
+                return fail(client);
             }
-            if (user.validToken(cred.token)) {
-                client.id = uuid()
-                client.send(makeMsg('auth', {
-                    state: 'pass'
-                }), postSendCallBack)
-                if (cred.type === webDebug) {
-                    client.username = user.username
-                    client.admin = user.admin
-                    client.type = cred.type
-                    addUser(client)
-                }
-                else if (cred.type === terminal) {
-                    client.username = 'cid : ' + cred.cid
-                    client.cid = cred.cid
-                    client.type = cred.type
-                    Parent.findOneAndUpdate({
-                        cid: cred.cid
-                    }, {
-                        $set: {
-                            ip: ip
-                            , status: parentOnline
-                        }
-                    }, {
-                        new: true
-                    }, function (err, parent) {
+            client.id = uuid();
+            client.send(makeStringMsg('auth', {
+                state: 'pass'
+            }), postSendCallBack);
+            client.username = user.username;
+            client.admin = user.admin;
+            client.type = cred.type;
+            addUser(client);
+            log.info(successMsg, client.username);
+            return pass(client);
+        })
+    }
+}
+
+wss.on('connection', function (client, req) {
+    var cred = new Url.parse(req.url, true).query;
+    var ip = getIpOfRequest(req);
+    cred.ip = ip;
+    onAuth(cred, client, function (client) {
+        client.on('message', function (msg) {
+            try {
+                respond(JSON.parse(msg), client);
+            } catch (err) {
+                log.error('[%s] Failed to parse msg %s', cred.username, msg, {
+                    stack: err.stack
+                });
+            }
+        });
+        client.on('close', function () {
+            var index = serverConfigListeners.indexOf(client);
+            if (index > -1) {
+                serverConfigListeners.splice(index, 1);
+            }
+            if (client.type === WEBCLIENT) {
+                removeUser(client);
+            } else if (client.type === TERMINAL) {
+                updateTerminalStatus(client.cid, TERM.OFFLINE);
+                removeTerminal(client);
+            }
+            log.info('[%s] A %s disconnected', client.username, client.type);
+        });
+        client.on('error', function (e) {
+            log.error('[%s] Socket on error', client.username, {
+                stack: err.stack
+            });
+        });
+    }, function (client) {
+        client.send(makeStringMsg('auth', {
+            state: 'fail'
+        }), err => {
+            postSendCallBack(err)
+            client.close();
+        });
+    });
+})
+
+function respond(msg, client) {
+    switch (msg.type) {
+        case 'bs':
+            msg = parseBitStream(msg.data.bs);
+            switch (msg.type) {
+                case 'status':
+                    onRecievingLampStatus(msg.data[LAMPOBJ]);
+                    break;
+            }
+            break;
+        case 'addListener':
+            switch (msg.data.loc) {
+                case 'terminals':
+                    log.info('[%s] Listening to terminals', client.username);
+                    terminalListeners.push(client);
+                    sendTerminals(client);
+                    break;
+                case 'lamps':
+                    if (client.type === TERMINAL && client.cid !== msg.data.cid) return;
+                    if (msg.data.cid == undefined) {
+                        log.warn('[%s] Invalid msg', client.username, {
+                            msg: msg
+                        });
+                        break;
+                    }
+                    log.info('[%s] Listening to lamp cluster %s', client.username, msg.data.cid);
+                    if (clusterListeners.hasOwnProperty(msg.data.cid)) {
+                        clusterListeners[msg.data.cid].push(client);
+                    } else {
+                        clusterListeners[msg.data.cid] = [client];
+                    }
+                    sendCluster(msg.data.cid, client);
+                    break;
+                case 'serverConfig':
+                    log.info('[%s] Listening to serverConfig', client.username);
+                    serverConfigListeners.push(client);
+                    client.send(makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack);
+                    break;
+                case 'userStatus':
+                    log.info('[%s] Listening to userStatus', client.username);
+                    userStatusListeners.push(client);
+                    break;
+                default:
+                    log.warn('[%s] Invalid msg', client.username, {
+                        msg: msg
+                    });
+            }
+            break
+        case 'removeListener':
+            switch (msg.data.loc) {
+                case 'terminals':
+                    log.info('[%s] Stopped listening to terminals', client.username);
+                    removeTerminalsListener(client);
+                    break;
+                case 'lamps':
+                    if (msg.data.cid == undefined) {
+                        log.warn('[%s] Invalid msg %s', client.username, msg.toString());
+                        break;
+                    }
+                    log.info('[%s] Stopped listening to lamp cluster %s', client.username, msg.data.cid);
+                    removeClusterListener(msg.data.cid, client);
+                    break;
+                case 'serverConfig':
+                    log.info('[%s] Stopped listening to serverConfig', client.username);
+                    removeSConfigListener(client);
+                    break;
+                case 'userStatus':
+                    log.info('[%s] Listening to userStatus', client.username);
+                    removeUserStatusListener(client);
+                    break;
+            }
+            break;
+        case 'addObj':
+            if (sConfig.override !== true && client.admin !== true) {
+                log.warn('[%s] Attempt to addObj without prev', client.username);
+                break;
+            }
+            switch (msg.data.type) {
+                case TERMOBJ:
+                    var newTerminal = new Terminal(msg.data.terminal);
+                    if (!newTerminal.initialiseAndCheck()) {
+                        log.warn('[%s] Attempt to add invalid obj', client.username, {
+                            msg: msg
+                        });
+                        client.send(makeStringMsg('notify', {
+                            type: 'error',
+                            msg: "Coundn't add terminal"
+                        }), postSendCallBack);
+                        break;
+                    }
+                    newTerminal.save(function (err) {
                         if (err) {
-                            log.error('[%s] Couldn\'t update ip of terminal', client.username, {
+                            log.error('[%s] Couldn\'t save terminal', client.username, {
+                                stack: err.stack
+                            });
+                            client.send(makeStringMsg('notify', {
+                                type: 'error',
+                                msg: 'Couldn\'t add terminal (Internal)'
+                            }), postSendCallBack);
+                        }
+                        clusterIds.push(newTerminal._id);
+                        log.info('[%s] Added a terminal %s', client.username, msg.data.terminal.cid);
+                        client.send(makeStringMsg('notify', {
+                            type: 'info',
+                            msg: "Added terminal"
+                        }), postSendCallBack);
+                        toTerminalListeners(makeStringMsg(TERMOBJ, {
+                            [TERMOBJ]: newTerminal.secureJsonify()
+                        }));
+                    });
+                    break;
+                case LAMPOBJ:
+                    var newLamp = new Lamp(msg.data.lamp);
+                    if (!newLamp.initialiseAndCheck()) {
+                        log.warn('[%s] Attempt to add invalid obj', client.username, {
+                            msg: msg
+                        });
+                        client.send(makeStringMsg('notify', {
+                            type: 'error',
+                            msg: 'Coundn\'t add lamp'
+                        }), postSendCallBack);
+                        break;
+                    }
+                    newLamp.save(function (err) {
+                        if (err) {
+                            log.error('[%s] Couldn\'t add lamp', client.username, {
+                                stack: err.stack
+                            });
+                            client.send(makeStringMsg('notify', {
+                                type: 'error',
+                                msg: 'Coundn\'t add lamp(Internal)'
+                            }), postSendCallBack);
+                            return;
+                        }
+                        Terminal.findOne({
+                            'cid': msg.data.lamp.cid
+                        }, ['lamps', 'head'], function (err, terminal) {
+                            if (err) {
+                                log.error('[%s] Couldn\'t add lamp', client.username, {
+                                    stack: err.stack
+                                });
+                                client.send(makeStringMsg('notify', {
+                                    type: 'error',
+                                    msg: 'Coundn\'t add lamp(Internal)'
+                                }), postSendCallBack);
+                                return;
+                            }
+                            if (terminal.lamps.length === 0) terminal.head = newLamp._id;
+                            else terminal.lamps[terminal.lamps.length - 1].next = newLamp._id;
+                            terminal.lamps.push(newLamp._id);
+                            terminal.save(err => {
+                                log.info('[%s] Added a lamp %d,%d', client.username, msg.data.lamp.cid, msg.data.lamp.lid);
+                                client.send(makeStringMsg('notify', {
+                                    type: 'success',
+                                    msg: 'Added lamp'
+                                }), postSendCallBack);
+                                toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: newLamp.jsonify()
+                                }));
+                            });
+                        });
+                    });
+                    break;
+            }
+            break;
+        case 'modObj':
+            if (!sConfig.override && !client.admin) {
+                log.warn('[%s] Attempt to modObj without prev', client.username)
+                break
+            }
+            switch (msg.data.type) {
+                case CLUSOBJ:
+                    var clus = msg.data.cluster
+                    Terminal.findOne({
+                        'cid': clus.cid,
+                    }).populate('lamps', ['bri']).exec(function (err, cluster) {
+                        if (err) {
+                            log.error('[%s] Couldn\'t mod obj', client.username, {
+                                stack: err.stack
+                            });
+                            client.send(makeStringMsg('notify', {
+                                type: 'error',
+                                msg: 'Internal error'
+                            }), postSendCallBack);
+                            return;
+                        }
+                        cluster.lamps.forEach(function (lamp) {
+                            lamp.bri = clus.bri;
+                            lamp.save();
+                        });
+                        toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
+                            CLUSOBJ: msg.data.cluster
+                        }));
+                    });
+                    break;
+                case 'serverConfig':
+                    var gConfig = new ServerConfig(msg.data.config);
+                    var up = {};
+                    if (gConfig.override === true || gConfig.override === false) {
+                        up['override'] = gConfig.override;
+                        sConfig.override = gConfig.override;
+                    }
+                    ServerConfig.update({}, {
+                        '$set': up
+                    }, {}, function (err) {
+                        if (err) {
+                            log.error('[%s] Couldn\'t mod objX', client.username, {
+                                stack: err.stack
+                            });
+                            client.send(makeStringMsg('notify', {
+                                type: 'error',
+                                msg: 'Internal error'
+                            }), postSendCallBack);
+                            return;
+                        }
+                        client.send(makeStringMsg('notify', {
+                            type: 'success',
+                            msg: 'Updated override'
+                        }), postSendCallBack);
+                        serverConfigListeners.forEach(function (client) {
+                            client.send(makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack)
+                        });
+                    });
+                    break
+                case LAMPOBJ:
+                    var lamp = new Lamp(msg.data.lamp)
+                    var up = {}
+                    if (lamp.status !== null) {
+                        up['lamps.$.status'] = lamp.status
+                    }
+                    if (lamp.bri !== null) {
+                        up['lamps.$.bri'] = lamp.bri
+                    }
+                    if (lamp.loc.lat !== null) {
+                        up['lamps.$.loc.lat'] = lamp.loc.lat
+                    }
+                    if (lamp.loc.lng !== null) {
+                        up['lamps.$.loc.lng'] = lamp.loc.lng
+                    }
+                    Lamp.update({
+                        'cid': lamp.cid,
+                        'lid': lamp.lid
+                    }, up, {}, function (err) {
+                        if (err) {
+                            log.error('[%s] Couldn\'t mod objX', client.username, {
                                 stack: err.stack
                             })
+                            client.send(makeStringMsg('notify', {
+                                type: 'error',
+                                msg: 'Internal error'
+                            }), postSendCallBack)
+                            return
                         }
-                        else {
-                            sendToAllTerminalListeners(makeMsg('parent', parent.JSONify()))
-                        }
-                    })
-                    addTerminal(client)
-                }
-                log.info(`[%s] A %s connected`, client.username, client.type)
-                client.on('message', function (msg) {
-                    try {
-                        respond(JSON.parse(msg), client)
-                    }
-                    catch (err) {
-                        log.error('[%s] Failed to parse msg %s', cred.username, msg, {
-                            stack: err.stack
-                        })
-                    }
-                })
-                client.on('close', function () {
-                    var index = serverConfigListeners.indexOf(client)
-                    if (index > -1) {
-                        serverConfigListeners.splice(index, 1)
-                    }
-                    if (client.type === webDebug) {
-                        removeUser(client)
-                    }
-                    else if (client.type === terminal) {
-                        updateParentStatus(client.cid, parentOffline)
-                        removeTerminal(client)
-                    }
-                    log.info('[%s] A %s disconnected', client.username, client.type)
-                })
-                client.on('error', function (e) {
-                    log.error('[%s] Socket on error', client.username, {
-                        stack: err.stack
-                    })
-                })
-            }
-            else {
-                log.error('[%s] soc auth failed for %s', cred.username, cred.type)
-                client.close()
-            }
-        })
-    })
-    //Clients listening to status of all terminals
-var terminalListeners = []
-    //Clients listening to cluster by cid
-var clusterListeners = {}
-var serverConfigListeners = []
-var userStatusListeners = []
-respond = function (msg, client) {
-    switch (msg.type) {
-    case 'bs':
-        msg = parseBitStream(msg.data.bs)
-        switch (msg.type) {
-        case 'status':
-            step4(msg.data)
-            break
-        }
-        break
-    case 'addListener':
-        switch (msg.data.loc) {
-        case 'parents':
-            terminalListeners.push(client)
-            sendAllParentsTo(client)
-            break
-        case 'lamps':
-            if (msg.data.cid == undefined) {
-                log.warn('[%s] Invalid msg', client.username, {
-                    msg: msg
-                })
-                break
-            }
-            if (clusterListeners.hasOwnProperty(msg.data.cid)) {
-                clusterListeners[msg.data.cid].push(client)
-            }
-            else {
-                clusterListeners[msg.data.cid] = [client]
-            }
-            sendLampsByCidTo(msg.data.cid, client)
-            break
-        case 'serverConfig':
-            serverConfigListeners.push(client)
-            client.send(makeMsg('serverConfig', sConfig.JSONify()), postSendCallBack)
-            break
-        case 'userStatus':
-            userStatusListeners.push(client)
-            break
-        default:
-            log.warn('[%s] Invalid msg', client.username, {
-                msg: msg
-            })
-        }
-        break
-    case 'removeListener':
-        switch (msg.data.loc) {
-        case 'parents':
-            removeParentListener(client)
-            break
-        case 'lamps':
-            if (msg.data.cid == undefined) {
-                log.warn('[%s] Invalid msg %s', client.username, msg.toString())
-                break
-            }
-            removeLampClusterListener(msg.data.cid, client)
-            break
-        case 'serverConfig':
-            removeSConfigListener(client)
-            break
-        case 'userStatus':
-            removeUserStatusListener(client)
-            break
-        }
-        break
-    case 'addObj':
-        if (sConfig.override !== true && client.admin !== true) {
-            log.warn('[%s] Attempt to addObj without prev', client.username)
-            break
-        }
-        switch (msg.data.type) {
-        case 'parent':
-            var p = new Parent(msg.data.obj)
-            if (!p.valid()) {
-                log.warn('[%s] Attempt to add invalid obj', client.username, {
-                    msg: msg
-                })
-                client.send(makeMsg('addError', {
-                    msg: 'Invalid Input'
-                }), postSendCallBack)
-                break
-            }
-            p.save(function (err) {
-                if (err) {
-                    log.error('[%s] Couldn\'t save parent', client.username, {
-                        stack: err.stack
-                    })
-                    client.send(makeMsg('addError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                    return
-                }
-                var lc = new LampCluster({
-                    'cid': p.cid
-                })
-                lc.save(function (err) {
-                    if (err) {
-                        log.error('[%s] Couldn\'t save parent', client.username, {
-                            stack: err
-                        })
-                    }
-                })
-                client.send(makeMsg('addSuccess', {}), postSendCallBack)
-                sendToAllTerminalListeners(makeMsg('parent', p.JSONify()))
-            })
-            break
-        case 'lamp':
-            var l = new Lamp(msg.data.obj)
-            if (!l.valid()) {
-                log.warn('[%s] Attempt to add invalid obj', client.username, {
-                    msg: msg
-                })
-                client.send(makeMsg('addError', {
-                    msg: 'Invalid Input'
-                }), postSendCallBack)
-                break
-            }
-            l.save(function (err) {
-                if (err) {
-                    log.error('[%s] Couldn\'t add lamp', client.username, {
-                        stack: err.stack
-                    })
-                    client.send(makeMsg('addError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                    return
-                }
-                LampCluster.update({
-                    'cid': msg.data.obj.cid
-                }, {
-                    $push: {
-                        'lamps': l._id
-                    }
-                }, {
-                    safe: true
-                    , upsert: true
-                    , new: true
-                }, function (err) {
-                    if (err) {
-                        log.error('[%s] Couldn\'t add lamp', client.username, {
-                            stack: err.stack
-                        })
-                        client.send(makeMsg('addError', {
-                            msg: 'Internal error'
+                        client.send(makeStringMsg('notify', {
+                            type: 'success',
+                            msg: 'Modified lamp'
                         }), postSendCallBack)
-                        return
-                    }
-                    client.send(makeMsg('addSuccess', {}), postSendCallBack)
-                    sendToAllClusterListeners(l.cid, jMakeMsg('lamp', l.JSONify()))
-                })
-            })
-            break
-        }
-        break
-    case 'modObj':
-        if (!sConfig.override && !client.admin) {
-            log.warn('[%s] Attempt to modObj without prev', client.username)
-            break
-        }
-        switch (msg.data.type) {
-        case 'cluster':
-            var clus = msg.data.obj
-            LampCluster.findOne({
-                'cid': clus.cid
-            , }).populate('lamps', ['bri']).exec(function (err, cluster) {
-                if (err) {
-                    log.error('[%s] Couldn\'t mod obj', client.username, {
-                        stack: err.stack
+                        toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                            [LAMPOBJ]: lamp.jsonify()
+                        }))
                     })
-                    client.send(makeMsg('modError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                    return
-                }
-                cluster.lamps.forEach(function (lamp) {
-                    lamp.bri = clus.bri
-                    lamp.save()
-                })
-                sendToAllClusterListeners(msg.data.obj.cid, jMakeMsg('cluster', {
-                    obj: msg.data.obj
-                }))
-            })
-            break
-        case 'serverConfig':
-            var gConfig = new ServerConfig(msg.data.config)
-            var up = {}
-            if (gConfig.override === true || gConfig.override === false) {
-                up['override'] = gConfig.override
-                sConfig.override = gConfig.override
+                    break;
             }
-            ServerConfig.update({}, {
-                '$set': up
-            }, {}, function (err) {
-                if (err) {
-                    log.error('[%s] Couldn\'t mod objX', client.username, {
-                        stack: err.stack
-                    })
-                    client.send(makeMsg('modError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                    return
-                }
-                client.send(makeMsg('modSuccess', {}), postSendCallBack)
-                serverConfigListeners.forEach(function (client) {
-                    client.send(makeMsg('serverConfig', sConfig), postSendCallBack)
-                })
-            })
-            break
-        case 'lamp':
-            var lamp = new Lamp(msg.data.obj)
-            var up = {}
-            if (lamp.status !== null) {
-                up['lamps.$.status'] = lamp.status
-            }
-            if (lamp.bri !== null) {
-                up['lamps.$.bri'] = lamp.bri
-            }
-            if (lamp.loc.lat !== null) {
-                up['lamps.$.loc.lat'] = lamp.loc.lat
-            }
-            if (lamp.loc.lng !== null) {
-                up['lamps.$.loc.lng'] = lamp.loc.lng
-            }
-            Lamp.update({
-                'cid': lamp.cid
-                , 'lid': lamp.lid
-            }, up, {}, function (err) {
-                if (err) {
-                    log.error('[%s] Couldn\'t mod objX', client.username, {
-                        stack: err.stack
-                    })
-                    client.send(makeMsg('addError', {
-                        msg: 'Internal error'
-                    }), postSendCallBack)
-                    return
-                }
-                client.send(makeMsg('modSuccess', {}), postSendCallBack)
-                sendToAllClusterListeners(lamp.cid, jMakeMsg('lamp', lamp.JSONify()))
-            })
-            break
-        }
-        break
+            break;
     }
 }
-to_nBit = function (num, n) {
-    var ret = []
-    for (var i = 0; i < n; ++i) {
-        ret.push((num % 2 === 1) ? '1' : '0')
-        num = Math.floor(num / 2)
-    }
-    return ret.reverse().join('')
-}
-toBitStream = function (msg) {
-    bStream = ''
-    switch (msg.type) {
-        //override
-    case 'lamp':
-        bStream += '10000'
-        bStream += to_nBit(msg.data.iid, 10)
-        bStream += '0'
-        bStream += to_nBit(msg.data.bri, 2)
-        bStream += to_nBit(0, 11)
-        break
-        //sync
-    case 'sync':
-        bStream += '01000'
-        bStream += to_nBit(0, 10)
-        bStream += '0'
-        bStream += to_nBit(0, 2)
-        bStream += to_nBit(msg.data.hour, 5)
-        bStream += to_nBit(msg.data.minute, 6)
-        break
-        //broadcast
-    case 'cluster':
-        bStream += '00100'
-        bStream += to_nBit(0, 10)
-        bStream += '0'
-        bStream += to_nBit(msg.data.obj.bri, 2)
-        bStream += to_nBit(0, 11)
-        break
-        //status
-    case 'status':
-        bStream += '00010'
-        bStream += to_nBit(msg.data.iid, 10)
-        bStream += '0'
-        bStream += to_nBit(0, 13)
-        break
-    }
-    return makeMsg('bs', {
-        bs: bStream
-    })
-}
-parseBitStream = function (msg) {
-    jmsg = {}
+
+function parseBitStream(msg) {
+    var jmsg = {}
     switch (msg.substr(0, 5)) {
-    case '00010':
-        jmsg.type = 'status'
-        jmsg.data = {
-            iid: parseInt(msg.substr(5, 10), 2)
-            , bri: parseInt(msg.substr(15, 2), 2)
-        }
-        break
+        case '00010':
+            jmsg.type = 'status'
+            jmsg.data = {
+                type: LAMPOBJ,
+                [LAMPOBJ]: {
+                    iid: parseInt(msg.substr(5, 10), 2),
+                    on: msg.substr(15, 1) === '0' ? false : true,
+                    bri: parseInt(msg.substr(16, 2), 2)
+                }
+            }
+            break
     }
     return jmsg
 }
-sendToAllClusterListeners = function (cid, msg) {
-    if (clusterListeners.hasOwnProperty(cid)) {
-        clusterListeners[cid].forEach(function (client) {
-            if (client.type == terminal) {
-                client.send(toBitStream(msg), postSendCallBack)
-            }
-            else {
-                client.send(JSON.stringify(msg), postSendCallBack)
-            }
-        })
-    }
-}
-sendToAllTerminalListeners = function (msg) {
-    terminalListeners.forEach(function (client) {
-        client.send(msg, postSendCallBack)
-    })
-}
-sendAllParentsTo = function (client) {
-    Parent.find({}, function (err, parents) {
-        if (err) {
-            log.error('[%s] Couldn\'t get parents', client.username, {
-                stack: err.stack
-            })
-        }
-        parents.forEach(function (parent) {
-            client.send(makeMsg('parent', parent), postSendCallBack)
-        })
-    })
-}
-sendLampsByCidTo = function (cid, client) {
-    LampCluster.findOne({
-        'cid': cid
-    }).populate('lamps').exec(function (err, lampC) {
-        if (err) {
-            log.error('[%s] Couldn\'t get cluster', client.username, {
-                stack: err.stack
-            })
-        }
-        lampC.lamps.forEach(function (lamp) {
-            if (client.type === webDebug) client.send(makeMsg('lamp', lamp), postSendCallBack)
-            else if (client.type == terminal) client.send(toBitStream(jMakeMsg('lamp', lamp)), postSendCallBack)
-        })
-    })
-}
-postSendCallBack = function (err) {
-    if (err) {
-        log.error('[] Couldn\'t send msg', {
-            stack: err.stack
-        })
-    }
-}
-jMakeMsg = function (type, data) {
-    return {
-        type: type
-        , data: data
-    }
-}
-makeMsg = function (type, data) {
-    return JSON.stringify({
-        type: type
-        , data: data
-    })
-}
-removeParentListener = function (client) {
-    if (client == undefined || terminalListeners == undefined) {
-        return
-    }
-    var index = terminalListeners.indexOf(client)
-    if (index > -1) {
-        terminalListeners.splice(index, 1)
-    }
-}
-removeLampClusterListener = function (cid, client) {
-    if (client == undefined || clusterListeners == undefined || clusterListeners[cid] == undefined) {
-        return
-    }
-    var index = clusterListeners[cid].indexOf(client)
-    if (index > -1) {
-        clusterListeners[cid].splice(index, 1)
-    }
-}
-removeSConfigListener = function (client) {
-    if (client == undefined || serverConfigListeners == undefined) {
-        return
-    }
-    var index = serverConfigListeners.indexOf(client)
-    if (index > -1) {
-        serverConfigListeners.splice(index, 1)
-    }
-}
-removeUserStatusListener = function (client) {
-    if (client == undefined || userStatusListeners == undefined) {
-        return
-    }
-    var index = userStatusListeners.indexOf(client)
-    if (index > -1) {
-        userStatusListeners.splice(index, 1)
-    }
-}
-var LampConfig = require('./models/lampConfig.js')
-saveCurrentConfig = function (name, username) {
-    var config = {
-        name: name
-        , author: username
-    }
-    config.terminals = []
-    LampCluster.find({}).populate('lamps').exec(function (err, clusters) {
-        if (err) {
-            log.error('[%s] Couldn\'t get current config %s', username, name, {
-                stack: err.stack
-            })
-            return
-        }
-        clusters.forEach(function (cluster) {
-            var mini = true
-                , commonBri = null
-                , foo = []
-            cluster.lamps.forEach(function (lamp) {
-                foo.push({
-                    lamp: lamp._id
-                    , bri: lamp.bri
-                })
-                if (commonBri === null) {
-                    commonBri = lamp.bri
-                }
-                else {
-                    if (commonBri !== lamp.bri) {
-                        mini = false
-                    }
-                }
-            })
-            if (mini) {
-                config.terminals.push({
-                    cid: cluster.cid
-                    , bri: commonBri
-                    , lamps: []
-                })
-            }
-            else {
-                config.terminals.push({
-                    cid: cluster.cid
-                    , bri: -1
-                    , lamps: foo
-                })
-            }
-        })
-        config = new LampConfig(config)
-        config.save(function (err) {
-            if (err) {
-                log.error('[%s] Couldn\'t save config %s', username, name, {
-                    stack: err.stack
-                })
-            }
-        })
-    })
-}
-loadConfig = function (config, username) {
-        config.terminals.forEach(function (terminal) {
-            if (terminal.bri !== -1) {
-                LampCluster.findOne({
-                    cid: terminal.cid
-                }).populate('lamps').exec(function (err, cluster) {
-                    if (err) {
-                        log.error('[%s] Couldn\'t get cluster', username, {
-                            stack: err.stack
-                        })
-                        return
-                    }
-                    cluster.lamps.forEach(function (lamp) {
-                        lamp.bri = terminal.bri
-                        lamp.save()
-                    })
-                    sendToAllClusterListeners(terminal.cid, jMakeMsg('cluster', {
-                        obj: {
-                            cid: terminal.cid
-                            , bri: terminal.bri
-                        }
-                    }))
-                })
-            }
-            else {
-                terminal.lamps.forEach(function (lampObj) {
-                    lampObj.lamp.bri = lampObj.bri
-                    lampObj.lamp.save()
-                    sendToAllClusterListeners(terminal.cid, jMakeMsg('lamp', lampObj.lamp))
-                })
-            }
-        })
-    }
-    //-------------------------------------------------------------------------------------
-const auto = 'AUTO'
+
+//-------------------------------------------------------------------------------------
 schedule.scheduleJob({
-    hour: '*'
-    , minute: 0
-    , second: 0
+    hour: 1,
+    minute: 0,
+    second: 0
 }, function () {
     LampConfig.findOne({
         name: 'midnyt'
     }).populate('terminals.lamps.lamp').exec(function (err, config) {
         if (err) {
-            log.error('[%s] Couldn\'t find config %s', auto, config.name, {
+            log.error('[%s] Couldn\'t find config %s', AUTO, config.name, {
                 stack: err.stack
             })
             return
         }
-        log.info('[%s] loaded config %s', auto, config.name)
-        loadConfig(config, auto)
+        log.info('[%s] loaded config %s', AUTO, config.name)
+        loadConfig(config, AUTO)
     })
 })
-timeTime = {
-        hour: '*'
-        , minute: 0
-        , second: 0
-    }
-    //`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
+var timeTime = {
+    hour: '*',
+    minute: '0',
+    second: '0'
+}
+//`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
 schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * * *`, function () {
-    var bStream = toBitStream(jMakeMsg('sync', {
-        hour: moment().get('hour')
-        , minute: moment().get('minute')
-            //        hour: timeTime.hour
-            //        , minute: timeTime.minute
+    var bStream = makeBits(makeJsonMsg('sync', {
+        hour: moment().get('hour'),
+        minute: moment().get('minute')
+        //        hour: timeTime.hour
+        //        , minute: timeTime.minute
     }))
     for (var cid in terminalClients) {
         if (terminalClients.hasOwnProperty(cid)) {
             terminalClients[cid].send(bStream, postSendCallBack)
         }
     }
-    log.info('[%s] sent time to all terminals', auto)
+    log.info('[%s] sent time to all terminals', AUTO)
 })
-const parentOffline = 1
-    , parentOnlineSynced = 0
-    , parentHasFaultyLamp = 2
-    , parentOnline = 3
-var doneSysCheck = true
-var clusterIds = []
-    , currentLamp, clusterFine
-step1 = function () {
-    if (doneSysCheck == false) {
-        return
-    }
-    doneSysCheck = false
-        //get all clusterIds
-    LampCluster.find({}, [], function (err, gClusters) {
+var clusterIdIndex = 0,
+    clusterIds = [],
+    nextLampId, currentLamp, clusterFine, currentCluster
+
+// Loads all cluster _ids in to array clusterIds
+function loadAllClusterIds(callback) {
+    Terminal.find({}, '_id', function (err, clusters) {
         if (err) {
-            log.error('[%s] Couldn\'t get clusterIds', auto, {
+            log.error('[%s] Couldn\'t get clusterIds', AUTO, {
                 stack: err.stack
-            })
-            return
+            });
+            return;
         }
-        gClusters.forEach(function (cluster) {
-            clusterIds.push(cluster._id)
-        })
-    })
-    process.nextTick(step2)
+        // Map array of objects containing _id field to array of _id
+        clusterIds = clusters.map(obj => obj._id);
+        process.nextTick(callback);
+    });
 }
-if (statusDelay != -1) {
-    setInterval(step1, statusDelay)
-}
-var lampIds = []
-step2 = function () {
-    if (clusterIds.length <= 0) {
-        doneSysCheck = true
-        return
+
+// Loads _id of lamps of next cluster
+function loadHeadOfNextCluster() {
+    if (clusterIdIndex >= clusterIds.length) {
+        clusterIdIndex = 0;
+        setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenStatusChecks);
+        return;
     }
-    var id = clusterIds.pop()
-    LampCluster.findOne({
-        _id: id
-    }, function (err, cluster) {
+    Terminal.findOne({
+        _id: clusterIds[clusterIdIndex++]
+    }, ['head', 'cid'], function (err, cluster) {
         if (err) {
-            log.error('[%s] Couldn\'t get cluster', auto, {
+            log.error('[%s] Couldn\'t get cluster', AUTO, {
                 stack: err.stack
-            })
-            return
+            });
+            setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
+            return;
         }
-        if (terminalClients[cluster.cid] == undefined) {
-            updateParentStatus(cluster.cid, parentOffline)
-            process.nextTick(step2)
-            return
-        }
-        else {
+        log.info('[%s] Checking cluster %d', AUTO, cluster.cid);
+        if (!terminalClients.hasOwnProperty(cluster.cid)) {
+            updateTerminalStatus(cluster.cid, TERM.OFFLINE);
+            setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
+            return;
+        } else {
+            nextLampId = cluster.head
+            currentCluster = cluster
             clusterFine = true
-            lampIds = cluster.lamps
-            lampIds.reverse()
-            process.nextTick(step3)
+            setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);
         }
     })
 }
-var timer
-step3 = function () {
-    if (lampIds.length <= 0) {
-        process.nextTick(step2)
-        return
+
+var timeoutTimer;
+
+function askStatusOfNextLamp() {
+    if (nextLampId == undefined) {
+        if (clusterFine) updateTerminalStatus(currentCluster.cid, TERM.ONLINESYNCED);
+        else updateTerminalStatus(currentCluster.cid, TERM.FAULTYLAMP);
+        setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
+        currentCluster = undefined
+        return;
     }
     Lamp.findOne({
-        _id: lampIds[lampIds.length - 1]
+        _id: nextLampId
     }, function (err, lamp) {
         if (err) {
-            log.error('[%s] Couldn\'t get lamp', auto, {
+            log.error('[%s] Couldn\'t get lamp', AUTO, {
                 stack: err.stack
-            })
-            return
+            });
+            return;
         }
-        terminalClients[lamp.cid].send(toBitStream(jMakeMsg('status', lamp.JSONify())), postSendCallBack)
-        currentLamp = lamp
-        timer = setTimeout(function () {
-            updateParentStatus(lamp.cid, parentOffline)
-            currentLamp = undefined
-            process.nextTick(step2)
-        }, 5000)
-    })
-}
-const lampDisconnected = 1
-    , lampFaulty = 2
-    , lampFine = 0
-step4 = function (gotLamp) {
-    if (currentLamp == undefined || gotLamp.iid != currentLamp.iid) {
-        return
-    }
-    clearTimeout(timer)
-    Lamp.findOne({
-        _id: lampIds.pop()
-    }, function (err, lamp) {
-        if (err) {
-            log.error('[%s] Couldn\'t get lamp', auto, {
-                stack: err.stack
-            })
-            return
-        }
-        if (gotLamp.iid != lamp.iid) {}
-        else if (gotLamp.bri != lamp.bri) {
-            clusterFine = false
-            if (lamp.status != lampFaulty) {
-                lamp.status = lampFaulty
-                lamp.save(function (err) {
-                    if (err) {
-                        return
-                    }
-                    sendToAllClusterListeners(lamp.cid, jMakeMsg('lamp', lamp.mJSONify()))
-                })
-            }
-        }
-        else {
-            if (lamp.status != lampFine) {
-                lamp.status = lampFine
-                lamp.save(function (err) {
-                    if (err) {
-                        return
-                    }
-                    sendToAllClusterListeners(lamp.cid, jMakeMsg('lamp', lamp.mJSONify()))
-                })
-            }
-        }
-        if (lampIds.length <= 0) {
-            if (clusterFine) {
-                updateParentStatus(lamp.cid, parentOnlineSynced)
-            }
-            else {
-                updateParentStatus(lamp.cid, parentHasFaultyLamp)
-            }
-        }
-        process.nextTick(step3)
-    })
-}
-updateParentStatus = function (cid, status) {
-        Parent.findOne({
-            cid: cid
-        }, function (err, parent) {
-            if (err) {
-                log.error('[%s] Couldn\'t update parent status', auto, {
-                    stack: err.stack
-                })
-            }
-            else {
-                if (parent.status == status) {
-                    return
+        terminalClients[lamp.cid].send(makeBits(makeJsonMsg('status', {
+            [LAMPOBJ]: lamp.jsonify()
+        })), postSendCallBack)
+        currentLamp = lamp;
+        log.info('[%s] Checking lamp %d->%d', AUTO, lamp.cid, lamp.lid);
+        timeoutTimer = setTimeout(function () {
+            log.warn('[%s] Timedout lamp %d->%d', AUTO, lamp.cid, lamp.lid);
+            lamp = currentLamp;
+            lamp.status = LAMP.DISCONNECTED;
+            clusterFine = false;
+            lamp.save(function (err) {
+                if (clusterListeners.hasOwnProperty(lamp.cid)) {
+                    var msg = makeStringMsg(LAMPOBJ, {
+                        [LAMPOBJ]: lamp.miniJsonify()
+                    });
+                    clusterListeners[lamp.cid].forEach(function (client) {
+                        if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
+                    });
                 }
-                parent.status = status
-                parent.save(function (err) {
+            });
+            updateTerminalStatus(lamp.cid, TERM.OFFLINE);
+            currentLamp = undefined;
+            nextLampId = undefined;
+            setTimeout(function () {
+                process.nextTick(loadHeadOfNextCluster)
+            }, sConfig.delayBetweenClusterStatusChecks);
+        }, sConfig.timeoutTimeForLampStatusCheck);
+    })
+}
+
+var dayStartTime = '08:00:00',
+    dayEndTime = '17:00:00',
+    dayTime = dayStartTime < myTimeStamp().substr(-8, 8) && myTimeStamp().substr(-8, 8) < dayEndTime;
+schedule.scheduleJob(`08 00 00 * * * *`, function () {
+    dayTime = true;
+})
+schedule.scheduleJob(`17 00 00 * * * *`, function () {
+    dayTime = false;
+})
+
+function onRecievingLampStatus(gotLamp) {
+    if (currentLamp == undefined || gotLamp.iid != currentLamp.iid) return;
+    clearTimeout(timeoutTimer);
+    Lamp.findOne({
+        _id: nextLampId
+    }, function (err, lamp) {
+        if (err) {
+            log.error('[%s] Couldn\'t get lamp', AUTO, {
+                stack: err.stack
+            });
+            return;
+        }
+        log.info('[AUTO] Got status of lamp %d,%d', lamp.cid, lamp.lid);
+        if (gotLamp.iid != lamp.iid) {
+        } else if (gotLamp.bri != lamp.bri || dayTime && gotLamp.on && lamp.bri != 0) {
+            clusterFine = false
+            if (lamp.status != LAMP.FAULTY) {
+                lamp.status = LAMP.FAULTY
+                lamp.save(function (err) {
                     if (err) {
-                        log.error('[%s] Couldn\'t save parent status', auto, {
-                            stack: err.stack
-                        })
+                        return
+                    }
+                    if (clusterListeners.hasOwnProperty(lamp.cid)) {
+                        clusterListeners[lamp.cid].forEach(function (client) {
+                            if (client.type === WEBCLIENT) {
+                                client.send(JSON.stringify(makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: lamp.miniJsonify()
+                                })), postSendCallBack);
+                            }
+                        });
                     }
                 })
-                sendToAllTerminalListeners(makeMsg('parent', parent.JSONify()))
             }
-        })
-    }
+        } else {
+            if (lamp.status != LAMP.FINE) {
+                lamp.status = LAMP.FINE;
+                lamp.save(function (err) {
+                    if (err) {
+                        return;
+                    }
+                    toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                        [LAMPOBJ]: lamp.miniJsonify()
+                    }));
+                })
+            }
+        }
+        nextLampId = lamp.next;
+        setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);
+    });
+}
+
+function updateTerminalStatus(cid, status) {
+    Terminal.findOne({
+        cid: cid
+    }, ['cid', 'status'], function (err, terminal) {
+        if (err) {
+            log.error('[%s] Couldn\'t update terminal status', AUTO, {
+                stack: err.stack
+            });
+        } else {
+            if (terminal.status == status) {
+                return;
+            }
+            terminal.status = status;
+            terminal.save(function (err) {
+                if (err) {
+                    log.error('[%s] Couldn\'t save terminal status', AUTO, {
+                        stack: err.stack
+                    });
+                }
+                toTerminalListeners(makeStringMsg(TERMOBJ, {
+                    [TERMOBJ]: terminal.secureJsonify()
+                }));
+            });
+        }
+    });
+}
 
 // Autoexes
-// create({body:{username:'admin',password:'pass',rpassword:'pass'},user:{username:'auto'}, flash:function(msg){}},function(){})
+// registerUser({body:{username:'admin',password:'pass',rpassword:'pass'},user:{username:'AUTO'}, flash:function(msg){}},function(){})
