@@ -1,8 +1,16 @@
 @import url('leftNav.css');
 #realContent {
+    border: solid 1px;
+    width: 50vw;
+    margin: 0 auto;
     padding: 20px;
 }
 
 .toolsLi {
     padding: 10px;
+}
+
+.paddedDiv{
+    padding: 20px;
+    background-color: #d9e2da;
 }

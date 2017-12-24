@@ -1,12 +1,12 @@
 #nav {
-    position: absolute;
+    position: fixed;
     height: 100%;
 }
 
 #navContainer {
     background-color: #333;
     float: left;
-    width: 110px;
+    width: 150px;
     height: 100%;
     display: inline-block;
 }
@@ -34,7 +34,7 @@
     background-color: #0099ff;
     box-sizing: border-box;
     font-family: 'Agency FB';
-    font-size: 20px;
+    font-size: 0.75vw;
 }
 
 #navToggler:focus {
@@ -42,10 +42,17 @@
 }
 
 .navA {
+    font-size: large;
     color: #f2f2f2;
     display: block;
     padding: 8px 16px;
     text-decoration: none;
+}
+
+#msgImg {
+    position: absolute;
+    right: 10px;
+    top: 10px;
 }
 
 .navA:hover {

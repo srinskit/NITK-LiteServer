@@ -3,21 +3,21 @@
     padding: 20px;
 }
 
-table {
+#logs {
     border-collapse: collapse;
 }
 
-td,
-th {
+#logs td,
+#logs th {
     border: 1px solid #0099ff;
     padding: 10px;
 }
 
-tr:hover {
+#logs tr:hover {
     background-color: #ddd;
 }
 
-th {
+#logs  th {
     padding-top: 10px;
     padding-bottom: 10px;
     text-align: left;
