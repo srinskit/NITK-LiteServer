@@ -5,11 +5,10 @@ jQuery(function ($) {
     document.body.appendChild(script);
     $(window).bind('beforeunload', removeListenersBeforeClose);
 });
-
 var LAMPOBJ = 'lamp',
     TERMOBJ = 'terminal',
     CLUSOBJ = 'cluster';
-var Terminals = {},
+var terminals = {},
     clusters = {};
 var map, bounds;
 var addMarker;
@@ -22,9 +21,9 @@ var LampStatus = {
     DISCONNECTED: 2,
     UNKNOWN: 3
 };
-var LampStatusIcon = ['', 'lamp_faulty', 'lamp_notconnected.png', 'lamp_unknown.png'];
+var LampStatusIcon = ['', 'lamp_faulty.png', 'lamp_notconnected.png', 'lamp_unknown.png'];
 var LampBrightnessIcon = ['yellow_0.png', 'yellow_1.png', 'yellow_2.png', 'yellow_3.png']
-var LampStatusText = ['Connected, fine', 'Connected, faulty', 'NRF link failure', 'Unknown'];
+var LampStatusText = ['Connected, fine', 'Connected, faulty', 'Disconnected', 'Unknown'];
 var isShowingLamps = {};
 
 function initialize() {
@@ -41,6 +40,14 @@ function initialize() {
     map = new google.maps.Map(document.getElementById('map'), mapOptions);
     if (user.admin) google.maps.event.addListener(map, 'rightclick', rightClickListener);
     startWS();
+    $(document).on("keypress", function (e) {
+        var char = String.fromCharCode(e.which);
+        if (char === 'f' || char === 'F') {
+            var cid = prompt('Enter CID');
+            if (cid && cid.length > 0 && terminals[cid]) map.panTo(terminals[cid].marker.getPosition());
+            else alert('Not found :(');
+        }
+    });
 }
 var rightClickListener = function (event) {
     if (addMarker !== undefined) {
@@ -116,11 +123,20 @@ startWS = function () {
             // alert('Error connecting to Websocket')
         }
     }
-    makeMsg = function (type, data) {
-        return JSON.stringify({
-            type: type,
-            data: data
-        })
+}
+
+function makeMsg(type, data) {
+    return JSON.stringify({
+        type: type,
+        data: data
+    });
+}
+
+function smallLamp(lamp) {
+    return {
+        cid: lamp.cid,
+        lid: lamp.iid,
+        bri: lamp.bri
     }
 }
 process = function (msg) {
@@ -131,10 +147,9 @@ process = function (msg) {
         break
     case LAMPOBJ:
         updateLamp(msg.data[LAMPOBJ])
-        // modifyLampMarker(msg.data[LAMPOBJ])
         break
     case CLUSOBJ:
-        modifyCluster(msg.data[CLUSOBJ])
+        updateCluster(msg.data[CLUSOBJ])
         break
     case 'auth':
         if (msg.data.state == 'pass') {
@@ -171,7 +186,7 @@ var selectedTerminalMarker;
 
 function updateTerminal(terminal) {
     if (!terminal.cid) return;
-    myTerm = Terminals[terminal.cid];
+    myTerm = terminals[terminal.cid];
     var props = ['loc', 'iid', 'status', 'ip'];
     var applyChange = {
         'loc': function (term) {
@@ -246,7 +261,7 @@ function updateTerminal(terminal) {
                 marker.infoWindow.open(map, marker)
             }
         }(myTerm)));
-        Terminals[myTerm.cid] = myTerm;
+        terminals[myTerm.cid] = myTerm;
     } else {
         for (var i = 0; i < props.length; ++i)
             if (terminal.hasOwnProperty(props[i])) myTerm[props[i]] = terminal[props[i]];
@@ -264,15 +279,15 @@ function updateLamp(lamp) {
             lamp.marker.setPosition(new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng));
         },
         'iid': function (lamp) {
-            if (lamp.marker.infoWindow) $(`#infolamp${lamp.cid} label[name='iid']`).text(`IID : ${lamp.iid}`);
+            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='iid']`).text(`IID : ${lamp.iid}`);
         },
         'status': function (lamp) {
-            lamp.marker.setTitle(`${lamp.cid},${lamp.iid} | ${LampStatusText[lamp.status]}`);
+            lamp.marker.setTitle(`${lamp.cid}, ${lamp.lid} | ${LampStatusText[lamp.status]}`);
             lamp.marker.setIcon(intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]));
-            if (lamp.marker.infoWindow) $(`#infolamp${lamp.cid}, ${lamp.lid} label[name='status']`).text(`Status : ${LampStatusText[lamp.status]}`);
+            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='status']`).text(`Status : ${LampStatusText[lamp.status]}`);
         },
         'bri': function (lamp) {
-            $(`#infoLamp${lamp.cid},${lamp.lid} select[name="bri"]`).val(lamp.bri);
+            $(`#infoLamp${lamp.cid}\\,${lamp.lid} select[name="bri"]`).val(lamp.bri);
             lamp.marker.setIcon(intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]));
         }
     };
@@ -293,7 +308,7 @@ function updateLamp(lamp) {
             position: new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng),
             map: map,
             icon: intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]),
-            title: `${lamp.cid.toString()}, ${lamp.iid.toString()} | ${LampStatusText[lamp.status]}`
+            title: `${lamp.cid}, ${lamp.lid} | ${LampStatusText[lamp.status]}`
         });
         marker.cid = lamp.cid;
         marker.lid = lamp.lid;
@@ -313,7 +328,7 @@ function updateLamp(lamp) {
                             delete selectedLampMarker.infoWindow
                         }
                         selectedLampMarker = marker
-                        var briSelector = $(`#infoLamp${lamp.cid},${lamp.lid} select[name="bri"]`);
+                        var briSelector = $(`#infoLamp${lamp.cid}\\,${lamp.lid} select`);
                         briSelector.val(lamp.bri);
                         if (!user.admin && !server.override) {
                             briSelector.prop('disabled', true);
@@ -325,15 +340,16 @@ function updateLamp(lamp) {
                         }
                     });
                     google.maps.event.addListener(marker.infoWindow, 'closeclick', function () {
-                        marker.infoWindowShowing = false
+                        marker.infoWindowShowing = false;
                         delete marker.infoWindow //bug much?
                     })
-                    marker.infoWindow.open(map, marker)
+                    marker.infoWindow.open(map, marker);
                 }
             }
         }(myLamp)));
         clusters[myLamp.cid][myLamp.lid] = myLamp;
     } else {
+        myLamp = clusters[lamp.cid][lamp.lid];
         for (var i = 0; i < props.length; ++i)
             if (lamp.hasOwnProperty(props[i])) myLamp[props[i]] = lamp[props[i]];
         for (var i = 0; i < props.length; ++i)
@@ -356,7 +372,7 @@ TerminalbPressed = function (cid) {
         delete clusters[cid]
     }
 }
-modifyCluster = function (clus) {
+updateCluster = function (clus) {
     var lamp = {
         bri: clus.bri,
         cid: clus.cid
@@ -372,7 +388,11 @@ modifyCluster = function (clus) {
 LampModify = function (lamp) {
     wsoc.send(makeMsg('modObj', {
         type: LAMPOBJ,
-        [LAMPOBJ]: lamp
+        [LAMPOBJ]: {
+            lid: lamp.lid,
+            cid: lamp.cid,
+            bri: lamp.bri
+        }
     }));
 }
 LampModifyByCid = function (cid, val) {

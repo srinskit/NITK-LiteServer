@@ -33,9 +33,9 @@ $('#msgImg').click(function () {
         // Non blocking alert
         setTimeout(function () {
             alert(msgQueue.join('\n'));
+            msgQueue = [];
+            msgQueueHasError = false;
         }, 1);
-        msgQueue = [];
-        msgQueueHasError = false;
     }
 });
 $('#navToggler').click(runAnime)
