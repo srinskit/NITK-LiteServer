@@ -1,4 +1,12 @@
+html {
+    font-family: "Arial", Arial, sans-serif;
+}
+
 #navDiv {
+    position: fixed;
+    width: 100%;
+    top: 0;
+    left: 0;
     background-color: #333;
     overflow: hidden;
 }
