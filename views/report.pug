@@ -5,14 +5,53 @@ html
         link(rel='stylesheet',href='/stylesheets/report.css')
     body
         include topNav
-        //- div(id="main")
-        div(class="card")
-            form(class="container")
-                h3 Problem with some lamps in cluster
-                input(name="cid" placeholder="Cluster ID")
+        div(class="card" style="margin-top:10vh;")
+            h3(class="marginalize") Report faulty lamps
+            form(class="container" method="GET" action="/")
+                label(class="marginalize") Cluster ID, The number on label of terminal
                 br
-                input(name="lids" placeholder="Lamp IDs of faulty lamps")
+                input(name="cid" placeholder="Cluster ID" class="marginalize")
                 br
-                input(name="description" placeholder="Describe the problem" style="width:100%;")
-                
-                
+                label(class="marginalize") Lamp ID, The number on label of terminal
+                br
+                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
+                br
+                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
+                br
+                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
+                br
+                input(type="submit" value="Report" class="marginalize")
+
+        div(class="card" )
+            h3(class="marginalize") Report Employee
+            form(class="container" method="GET" action="/")
+                label(class="marginalize") Cluster ID, The number on label of terminal
+                br
+                input(name="cid" placeholder="Cluster ID" class="marginalize")
+                br
+                label(class="marginalize") Lamp ID, The number on label of terminal
+                br
+                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
+                br
+                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
+                br
+                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
+                br
+                input(type="submit" value="Report" class="marginalize")
+
+        div(class="card" id="emp")
+            h3(class="marginalize" ) Feedback and suggestions
+            form(class="container" method="GET" action="/")
+                label(class="marginalize") Cluster ID, The number on label of terminal
+                br
+                input(name="cid" placeholder="Cluster ID" class="marginalize")
+                br
+                label(class="marginalize") Lamp ID, The number on label of terminal
+                br
+                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
+                br
+                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
+                br
+                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
+                br
+                input(type="submit" value="Report" class="marginalize")
