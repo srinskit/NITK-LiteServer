@@ -334,49 +334,40 @@ app.get('/dash/load', serverInOverride, function (req, res) {
 function saveCurrentConfig(name, username) {
     var config = {
         name: name,
-        author: username
+        terminals: []
     };
-    config.terminals = [];
+    // Todo populate lamps but only bri and lid
     Terminal.find({}, ['lamps', 'cid']).populate('lamps').exec(function (err, clusters) {
         if (err) {
-            log.error('[%s] Couldn\'t get current config %s', username, name, {
+            log.error('[%s] Couldn\'t get current config', username, {
                 stack: err.stack
             });
             return;
         }
         clusters.forEach(function (cluster) {
-            var mini = true,
-                commonBri = null,
+            var compressable = true,
+                commonBri = undefined,
                 foo = [];
             cluster.lamps.forEach(function (lamp) {
                 foo.push({
                     lamp: lamp._id,
                     bri: lamp.bri
                 });
-                if (commonBri === null) {
-                    commonBri = lamp.bri;
-                } else {
-                    if (commonBri !== lamp.bri) {
-                        mini = false;
-                    }
-                }
+                if (commonBri === undefined) commonBri = lamp.bri;
+                else if (commonBri !== lamp.bri) compressable = false;
             });
-            if (mini) {
-                config.terminals.push({
-                    cid: cluster.cid,
-                    bri: commonBri,
-                    lamps: []
-                });
-            } else {
-                config.terminals.push({
-                    cid: cluster.cid,
-                    bri: -1,
-                    lamps: foo
-                });
-            }
+            if (compressable) config.terminals.push({
+                cid: cluster.cid,
+                bri: commonBri,
+                lamps: []
+            });
+            else config.terminals.push({
+                cid: cluster.cid,
+                bri: -1,
+                lamps: foo
+            });
         });
-        config = new LampConfig(config);
-        config.save(function (err) {
+        (new LampConfig(config)).save(function (err) {
             if (err) {
                 log.error('[%s] Couldn\'t save config %s', username, name, {
                     stack: err.stack
@@ -555,16 +546,19 @@ function loadConfig(config, username) {
         if (terminal.bri !== -1) {
             Terminal.findOne({
                 cid: terminal.cid
-            }, ['lamps']).populate('lamps').exec(function (err, cluster) {
+            }, ['lamps'], function (err, cluster) {
                 if (err) {
-                    log.error('[%s] Couldn\'t get cluster', username, {
+                    log.error('[%s] Couldn\'t get cluster %d', username, terminal.cid, {
                         stack: err.stack
                     });
                     return;
                 }
-                cluster.lamps.forEach(function (lamp) {
-                    lamp.bri = terminal.bri;
-                    lamp.save();
+                cluster.lamps.forEach(function (_id) {
+                    Lamp.update({
+                        _id: _id
+                    }, {
+                        bri: terminal.bri
+                    });
                 });
                 toClusterListeners(terminal.cid, makeJsonMsg(CLUSOBJ, {
                     [CLUSOBJ]: {
@@ -593,7 +587,7 @@ app.post('/dash/load', serverInOverride, function (req, res) {
         if (configName !== undefined && configName.length > 0) {
             log.info('[%s] Saved config %s', req.user.username, configName);
             saveCurrentConfig(configName, req.user.username);
-            req.flash('msg', 'Saved');
+            req.flash('msg', 'saved');
             res.redirect('/dash/load');
         } else {
             log.warn('[%s] Invalid config name %s', req.user.username, configName);
@@ -1537,8 +1531,7 @@ function markLampDisconnected(id) {
                 [LAMPOBJ]: lamp.miniJsonify()
             });
             clusterListeners[lamp.cid].forEach(function (client) {
-                if (client.type === WEBCLIENT)
-                    client.send(msg, postSendCallBack);
+                if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
             });
         }
         markLampDisconnected(lamp.next);
