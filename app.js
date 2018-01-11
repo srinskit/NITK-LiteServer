@@ -445,7 +445,7 @@ function makeBits(msg) {
         bStream += '00100';
         bStream += nBit(0, 10);
         bStream += '0';
-        bStream += nBit(msg.data.clus.bri, 2);
+        bStream += nBit(msg.data[CLUSOBJ].bri, 2);
         bStream += nBit(0, 11);
         break;
         //status
@@ -461,18 +461,18 @@ function makeBits(msg) {
     });
 }
 
-function toClusterListeners(cid, msg, toAll=false) {
+function toClusterListeners(cid, msg, toAll = false) {
     if (clusterListeners.hasOwnProperty(cid)) {
         clusterListeners[cid].forEach(function (client) {
-            if (client.type === WEBCLIENT) client.send(JSON.stringify(msg), postSendCallBack);
-            else if (toAll && client.type === TERMINAL) client.send(makeBits(msg), postSendCallBack);
+            if (client.type === WEBCLIENT) safeSend(client, JSON.stringify(msg), postSendCallBack);
+            else if (toAll && client.type === TERMINAL) safeSend(client, makeBits(msg), postSendCallBack);
         });
     }
 }
 
 function toTerminalListeners(msg) {
     terminalListeners.forEach(function (client) {
-        if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
+        if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
     });
 }
 
@@ -486,7 +486,7 @@ function sendTerminals(client) {
                 return;
             }
             terms.forEach(term => {
-                client.send(makeStringMsg(TERMOBJ, {
+                safeSend(client, makeStringMsg(TERMOBJ, {
                     [TERMOBJ]: term.secureJsonify()
                 }), postSendCallBack);
             });
@@ -506,10 +506,10 @@ function sendCluster(cid, client) {
                 return;
             }
             terminal.lamps.forEach(function (lamp) {
-                if (client.type === WEBCLIENT) client.send(makeStringMsg(LAMPOBJ, {
+                if (client.type === WEBCLIENT) safeSend(client, makeStringMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.jsonify()
                 }), postSendCallBack);
-                else if (client.type === TERMINAL) client.send(makeBits(makeJsonMsg(LAMPOBJ, {
+                else if (client.type === TERMINAL) safeSend(client, makeBits(makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.jsonify()
                 })), postSendCallBack);
             });
@@ -565,7 +565,7 @@ function loadConfig(config, username) {
                         cid: terminal.cid,
                         bri: terminal.bri
                     }
-                }),true);
+                }), true);
             });
         } else {
             terminal.lamps.forEach(function (lampObj) {
@@ -984,7 +984,7 @@ function addUser(client) {
                 });
             }
             userStatusListeners.forEach(function (lis) {
-                lis.send(makeStringMsg('userStatus', {
+                safeSend(lis, makeStringMsg('userStatus', {
                     user: {
                         username: client.username,
                         online: true
@@ -996,6 +996,10 @@ function addUser(client) {
 }
 
 function removeUser(client) {
+    removeTerminalsListener(client);
+    removeClusterListener(client);
+    removeSConfigListener(client);
+    removeUserStatusListener(client);
     delete webClients[client.username][client.id];
     if (Object.keys(webClients[client.username]).length <= 0) {
         User.update({
@@ -1004,7 +1008,7 @@ function removeUser(client) {
             online: false
         }, function (err) {
             userStatusListeners.forEach(function (lis) {
-                lis.send(makeStringMsg('userStatus', {
+                safeSend(lis, makeStringMsg('userStatus', {
                     user: {
                         username: client.username,
                         online: false
@@ -1048,7 +1052,7 @@ function onAuth(cred, client, pass, fail) {
                 client.username = cred.username;
                 client.cid = terminal.cid;
                 client.type = cred.type;
-                client.send(makeStringMsg('auth', {
+                safeSend(client, makeStringMsg('auth', {
                     state: 'pass'
                 }), postSendCallBack);
                 addTerminal(client);
@@ -1076,7 +1080,7 @@ function onAuth(cred, client, pass, fail) {
                 return fail(client);
             }
             client.id = uuid();
-            client.send(makeStringMsg('auth', {
+            safeSend(client, makeStringMsg('auth', {
                 state: 'pass'
             }), postSendCallBack);
             client.username = user.username;
@@ -1121,7 +1125,7 @@ wss.on('connection', function (client, req) {
             });
         });
     }, function (client) {
-        client.send(makeStringMsg('auth', {
+        safeSend(client, makeStringMsg('auth', {
             state: 'fail'
         }), err => {
             postSendCallBack(err)
@@ -1148,7 +1152,7 @@ function respond(msg, client) {
             sendTerminals(client);
             break;
         case 'lamps':
-            if (client.type === TERMINAL && client.cid !== msg.data.cid) return;
+            if (client.type === TERMINAL && client.cid != msg.data.cid) return;
             if (msg.data.cid == undefined) {
                 log.warn('[%s] Invalid msg', client.username, {
                     msg: msg
@@ -1166,7 +1170,7 @@ function respond(msg, client) {
         case 'serverConfig':
             log.info('[%s] Listening to serverConfig', client.username);
             serverConfigListeners.push(client);
-            client.send(makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack);
+            safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack);
             break;
         case 'userStatus':
             log.info('[%s] Listening to userStatus', client.username);
@@ -1214,7 +1218,7 @@ function respond(msg, client) {
                 log.warn('[%s] Attempt to add invalid obj', client.username, {
                     msg: msg
                 });
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'error',
                     msg: "Coundn't add terminal"
                 }), postSendCallBack);
@@ -1225,14 +1229,14 @@ function respond(msg, client) {
                     log.error('[%s] Couldn\'t save terminal', client.username, {
                         stack: err.stack
                     });
-                    client.send(makeStringMsg('notify', {
+                    safeSend(client, makeStringMsg('notify', {
                         type: 'error',
                         msg: 'Couldn\'t add terminal (Internal)'
                     }), postSendCallBack);
                 }
                 clusterIds.push(newTerminal._id);
                 log.info('[%s] Added a terminal %s', client.username, msg.data.terminal.cid);
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'info',
                     msg: "Added terminal"
                 }), postSendCallBack);
@@ -1247,7 +1251,7 @@ function respond(msg, client) {
                 log.warn('[%s] Attempt to add invalid obj', client.username, {
                     msg: msg
                 });
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'error',
                     msg: 'Coundn\'t add lamp'
                 }), postSendCallBack);
@@ -1258,7 +1262,7 @@ function respond(msg, client) {
                     log.error('[%s] Couldn\'t add lamp', client.username, {
                         stack: err.stack
                     });
-                    client.send(makeStringMsg('notify', {
+                    safeSend(client, makeStringMsg('notify', {
                         type: 'error',
                         msg: 'Coundn\'t add lamp(Internal)'
                     }), postSendCallBack);
@@ -1271,7 +1275,7 @@ function respond(msg, client) {
                         log.error('[%s] Couldn\'t add lamp', client.username, {
                             stack: err.stack
                         });
-                        client.send(makeStringMsg('notify', {
+                        safeSend(client, makeStringMsg('notify', {
                             type: 'error',
                             msg: 'Coundn\'t add lamp(Internal)'
                         }), postSendCallBack);
@@ -1294,13 +1298,13 @@ function respond(msg, client) {
                     terminal.lamps.push(newLamp._id);
                     terminal.save(err => {
                         log.info('[%s] Added a lamp %d,%d', client.username, msg.data.lamp.cid, msg.data.lamp.lid);
-                        client.send(makeStringMsg('notify', {
+                        safeSend(client, makeStringMsg('notify', {
                             type: 'success',
                             msg: 'Added lamp'
                         }), postSendCallBack);
                         toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
                             [LAMPOBJ]: newLamp.jsonify()
-                        }),true);
+                        }), true);
                     });
                 });
             });
@@ -1322,7 +1326,7 @@ function respond(msg, client) {
                     log.error('[%s] Couldn\'t mod obj', client.username, {
                         stack: err.stack
                     });
-                    client.send(makeStringMsg('notify', {
+                    safeSend(client, makeStringMsg('notify', {
                         type: 'error',
                         msg: 'Internal error'
                     }), postSendCallBack);
@@ -1332,13 +1336,13 @@ function respond(msg, client) {
                     lamp.bri = clus.bri;
                     lamp.save();
                 });
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'success',
                     msg: 'Modified Cluster'
                 }), postSendCallBack);
                 toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
                     [CLUSOBJ]: msg.data.cluster
-                }),true);
+                }), true);
             });
             break;
         case 'serverConfig':
@@ -1355,23 +1359,23 @@ function respond(msg, client) {
                     log.error('[%s] Couldn\'t mod objX', client.username, {
                         stack: err.stack
                     });
-                    client.send(makeStringMsg('notify', {
+                    safeSend(client, makeStringMsg('notify', {
                         type: 'error',
                         msg: 'Internal error'
                     }), postSendCallBack);
                     return;
                 }
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'success',
                     msg: 'Updated override'
                 }), postSendCallBack);
                 serverConfigListeners.forEach(function (client) {
-                    client.send(makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack)
+                    safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack)
                 });
             });
             break
         case LAMPOBJ:
-            var lamp = new Lamp(msg.data.lamp)
+            var lamp = new Lamp(msg.data.lamp);
             var up = {}
             if (lamp.status !== undefined) up.status = lamp.status;
             if (lamp.bri !== undefined) up.bri = lamp.bri;
@@ -1383,31 +1387,44 @@ function respond(msg, client) {
                 if (!up.loc) up.loc = {};
                 up.loc.lng = lamp.loc.lng;
             }
-            Lamp.update({
+            Lamp.findOneAndUpdate({
                 'cid': lamp.cid,
                 'lid': lamp.lid
-            }, up, {}, function (err) {
+            }, up, {
+                new: true
+            }, function (err, lamp) {
+                // console.log(lampi)
                 if (err) {
                     log.error('[%s] Couldn\'t mod obj', client.username, {
                         stack: err.stack
                     })
-                    client.send(makeStringMsg('notify', {
+                    safeSend(client, makeStringMsg('notify', {
                         type: 'error',
                         msg: 'Internal error'
                     }), postSendCallBack)
                     return
                 }
-                client.send(makeStringMsg('notify', {
+                safeSend(client, makeStringMsg('notify', {
                     type: 'success',
                     msg: 'Modified lamp'
                 }), postSendCallBack)
                 toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.miniJsonify()
-                }),true)
+                }), true)
             });
             break;
         }
         break;
+    }
+}
+
+function safeSend(client, msg) {
+    if (client == undefined) return;
+    try {
+        client.send(msg);
+    } catch (err) {
+        if (client.type == TERMINAL) removeTerminal(client);
+        else if (client.type == WEBCLIENT) removeUser(client);
     }
 }
 
@@ -1457,15 +1474,11 @@ schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * *
     var bStream = makeBits(makeJsonMsg('sync', {
         hour: moment().get('hour'),
         minute: moment().get('minute')
-        //        hour: timeTime.hour
-        //        , minute: timeTime.minute
     }))
     for (var cid in terminalClients) {
-        if (terminalClients.hasOwnProperty(cid)) {
-            terminalClients[cid].send(bStream, postSendCallBack)
-        }
+        if (terminalClients.hasOwnProperty(cid)) safeSend(terminalClients[cid], bStream);
     }
-    log.info('[%s] sent time to all terminals', AUTO)
+    log.info('[%s] Sent time to all terminals', AUTO)
 })
 var clusterIdIndex = 0,
     clusterIds = [],
@@ -1531,7 +1544,7 @@ function markLampDisconnected(id) {
                 [LAMPOBJ]: lamp.miniJsonify()
             });
             clusterListeners[lamp.cid].forEach(function (client) {
-                if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
+                if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
             });
         }
         markLampDisconnected(lamp.next);
@@ -1555,7 +1568,8 @@ function askStatusOfNextLamp() {
             });
             return;
         }
-        terminalClients[lamp.cid].send(makeBits(makeJsonMsg('status', {
+        // ToDo Terminal disconnected in middle of status
+        safeSend(terminalClients[lamp.cid], makeBits(makeJsonMsg('status', {
             [LAMPOBJ]: lamp.jsonify()
         })), postSendCallBack)
         currentLamp = lamp;
@@ -1572,7 +1586,7 @@ function askStatusOfNextLamp() {
                             [LAMPOBJ]: lamp.miniJsonify()
                         });
                         clusterListeners[lamp.cid].forEach(function (client) {
-                            if (client.type === WEBCLIENT) client.send(msg, postSendCallBack);
+                            if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
                         });
                     }
                 });
@@ -1622,7 +1636,7 @@ function onRecievingLampStatus(gotLamp) {
                     if (clusterListeners.hasOwnProperty(lamp.cid)) {
                         clusterListeners[lamp.cid].forEach(function (client) {
                             if (client.type === WEBCLIENT) {
-                                client.send(JSON.stringify(makeJsonMsg(LAMPOBJ, {
+                                safeSend(client, JSON.stringify(makeJsonMsg(LAMPOBJ, {
                                     [LAMPOBJ]: lamp.miniJsonify()
                                 })), postSendCallBack);
                             }
