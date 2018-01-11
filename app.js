@@ -461,11 +461,11 @@ function makeBits(msg) {
     });
 }
 
-function toClusterListeners(cid, msg) {
+function toClusterListeners(cid, msg, toAll=false) {
     if (clusterListeners.hasOwnProperty(cid)) {
         clusterListeners[cid].forEach(function (client) {
             if (client.type === WEBCLIENT) client.send(JSON.stringify(msg), postSendCallBack);
-            else if (client.type === TERMINAL) client.send(makeBits(msg), postSendCallBack);
+            else if (toAll && client.type === TERMINAL) client.send(makeBits(msg), postSendCallBack);
         });
     }
 }
@@ -565,7 +565,7 @@ function loadConfig(config, username) {
                         cid: terminal.cid,
                         bri: terminal.bri
                     }
-                }));
+                }),true);
             });
         } else {
             terminal.lamps.forEach(function (lampObj) {
@@ -573,7 +573,7 @@ function loadConfig(config, username) {
                 lampObj.lamp.save();
                 toClusterListeners(terminal.cid, makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lampObj.lamp
-                }));
+                }), true);
             });
         }
     });
@@ -1300,7 +1300,7 @@ function respond(msg, client) {
                         }), postSendCallBack);
                         toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
                             [LAMPOBJ]: newLamp.jsonify()
-                        }));
+                        }),true);
                     });
                 });
             });
@@ -1338,7 +1338,7 @@ function respond(msg, client) {
                 }), postSendCallBack);
                 toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
                     [CLUSOBJ]: msg.data.cluster
-                }));
+                }),true);
             });
             break;
         case 'serverConfig':
@@ -1403,7 +1403,7 @@ function respond(msg, client) {
                 }), postSendCallBack)
                 toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.miniJsonify()
-                }))
+                }),true)
             });
             break;
         }
@@ -1449,7 +1449,7 @@ schedule.scheduleJob({
 })
 var timeTime = {
     hour: '*',
-    minute: '0',
+    minute: '*',
     second: '0'
 }
 //`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`

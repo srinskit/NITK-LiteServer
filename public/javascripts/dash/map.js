@@ -193,15 +193,15 @@ function updateTerminal(terminal) {
             term.marker.setPosition(new google.maps.LatLng(term.loc.lat, term.loc.lng));
         },
         'iid': function (term) {
-            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='iid']`).text(`IID : ${term.iid}`);
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='iid']`).text(`IID: ${term.iid}`);
         },
         'status': function (term) {
             term.marker.setTitle(`${term.cid.toString()} | ${terminalStatusText[term.status]}`);
             term.marker.setIcon(intIconRoot + terminalStatusIcon[term.status]);
-            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='status']`).text(`Status : ${terminalStatusText[term.status]}`);
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='status']`).text(`Status: ${terminalStatusText[term.status]}`);
         },
         'ip': function (term) {
-            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='ip']`).text(`IP : ${term.ip}`);
+            if (term.marker.infoWindow) $(`#infoTerm${term.cid} label[name='ip']`).text(`IP: ${term.ip}`);
         }
     };
     if (!myTerm) {
@@ -279,12 +279,12 @@ function updateLamp(lamp) {
             lamp.marker.setPosition(new google.maps.LatLng(lamp.loc.lat, lamp.loc.lng));
         },
         'iid': function (lamp) {
-            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='iid']`).text(`IID : ${lamp.iid}`);
+            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='iid']`).text(`IID: ${lamp.iid}`);
         },
         'status': function (lamp) {
             lamp.marker.setTitle(`${lamp.cid}, ${lamp.lid} | ${LampStatusText[lamp.status]}`);
             lamp.marker.setIcon(intIconRoot + (lamp.status === LampStatus.FINE ? LampBrightnessIcon[lamp.bri] : LampStatusIcon[lamp.status]));
-            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='status']`).text(`Status : ${LampStatusText[lamp.status]}`);
+            if (lamp.marker.infoWindow) $(`#infoLamp${lamp.cid}\\,${lamp.lid} label[name='status']`).text(`${LampStatusText[lamp.status]}`);
         },
         'bri': function (lamp) {
             $(`#infoLamp${lamp.cid}\\,${lamp.lid} select[name="bri"]`).val(lamp.bri);
