@@ -5,6 +5,7 @@ var bcrypt = require('bcrypt-nodejs');
 var termSchema = mongoose.Schema({
     iid: Number,
     cid: Number,
+    fcid: Number,
     status: Number,
     loc: {
         lat: String,

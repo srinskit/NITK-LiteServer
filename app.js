@@ -5,7 +5,9 @@ process.on('uncaughtException', function (err) {
     console.log(err.stack);
 });
 var AUTO = 'AUTO';
+var debugTerm = false;
 var express = require('express');
+var fs = require('fs');
 var path = require('path');
 var favicon = require('serve-favicon');
 var morgan = require('morgan');
@@ -29,22 +31,42 @@ var TERM = new Terminal();
 var LogMsg = require('./logMessages.js');
 // For India
 moment.tz('Asia/Kolkata').format();
+var options = {
+    key: fs.readFileSync('config/private.key'),
+};
+var options = {
+    key: fs.readFileSync('config/private.key'),
+    cert: fs.readFileSync('config/server.crt')
+};
 
 function myTimeStamp() {
     return moment().format().slice(0, -6);
 }
 // Log to console and server.log
 // TODO custom level to log error.stack
+var logListeners = [];
+var wsTransport = {
+    log: function (level, msg, meta, time) {
+        if (logListeners.length > 0) {
+            msg = makeStringMsg('log', {
+                level: level,
+                message: msg,
+                timestamp: myTimeStamp()
+            });
+            logListeners.forEach(function (client) {
+                safeSend(client, msg);
+            });
+        }
+    }
+};
 var log = new winston.Logger({
-    transports: [
-        new winston.transports.Console({
-            timestamp: myTimeStamp,
-            colorize: true
-        }), new winston.transports.File({
-            filename: 'server.log',
-            timestamp: myTimeStamp
-        })
-    ]
+    transports: [new winston.transports.Console({
+        timestamp: myTimeStamp,
+        colorize: true
+    }), new winston.transports.File({
+        filename: 'server.log',
+        timestamp: myTimeStamp
+    }), wsTransport]
 });
 // Don't exit on error
 log.exitOnError = false;
@@ -67,6 +89,7 @@ var three = false,
     one = false;
 // Find last saved server config
 var sConfig;
+var rerouteMap = {};
 ServerConfig.findOne({}, function (err, config) {
     if (err) {
         log.error(LogMsg.dbNoServerConfig, AUTO);
@@ -248,8 +271,6 @@ app.get('/dash/logs', userIsAdmin, function (req, res) {
     else fromTime = '00:00:00';
     if (req.query.untilTime && req.query.untilTime.length === 8) untilTime = req.query.untilTime;
     else untilTime = '23:59:59';
-    console.log(fromDate, fromTime);
-    console.log(untilDate, untilTime);
     var levels, level, options = {
         from: fromDate + 'T' + fromTime,
         until: untilDate + 'T' + untilTime,
@@ -257,18 +278,17 @@ app.get('/dash/logs', userIsAdmin, function (req, res) {
         order: 'desc'
     };
     switch (req.query.level) {
-    case 'all':
-        levels = {
-            info: true,
-            error: true
-        };
-        level = 'all';
-        break;
     case 'info':
         levels = {
             info: true
         };
         level = 'info';
+        break;
+    case 'warn':
+        levels = {
+            warn: true
+        };
+        level = 'warn';
         break;
     case 'error':
         levels = {
@@ -276,10 +296,12 @@ app.get('/dash/logs', userIsAdmin, function (req, res) {
         };
         level = 'error';
         break;
+    case 'all':
     default:
         levels = {
             info: true,
-            error: true
+            error: true,
+            warn: true
         };
         level = 'all';
     }
@@ -396,81 +418,76 @@ function postSendCallBack(err) {
     }
 }
 
-function makeJsonMsg(type, data) {
-    return {
+function makeTermMsg(type, data) {
+    let jsonMsg = {
         type: type,
         data: data
     };
+    return {
+        type: 'bs',
+        bs: makeBits(jsonMsg),
+        data: debugTerm ? jsonMsg : undefined
+    };
 }
 
-function makeStringMsg(type, data) {
-    return JSON.stringify({
+function makeStringTermMsg(type, data) {
+    return JSON.stringify(makeTermMsg(type, data));
+}
+
+function makeJsonMsg(type, data, includeBs) {
+    let jsonMsg = {
         type: type,
         data: data
-    });
+    };
+    if (includeBs) jsonMsg.bs = makeBits(jsonMsg);
+    return jsonMsg;
+}
+
+function makeStringMsg(type, data, includeBs) {
+    return JSON.stringify(makeJsonMsg(type, data, includeBs));
 }
 
 function nBit(num, n) {
-    var ret = [],
-        i;
-    for (i = 0; i < n; i += 1) {
-        ret.push((num % 2 === 1) ? '1' : '0');
-        num = Math.floor(num / 2);
-    }
-    return ret.reverse().join('');
+    let bin = Number(num).toString(2);
+    return '0'.repeat(n - bin.length) + bin;
 }
 
-function makeBits(msg) {
-    var bStream = '';
-    switch (msg.type) {
+function makeBits(jsonMsg) {
+    let bitStream;
+    switch (jsonMsg.type) {
         //override
     case LAMPOBJ:
-        bStream += '10000';
-        bStream += nBit(msg.data.lamp.iid, 10);
-        bStream += '0';
-        bStream += nBit(msg.data.lamp.bri, 2);
-        bStream += nBit(0, 11);
+        bitStream = '10000' + nBit(jsonMsg.data.lamp.iid, 10) + '0' + nBit(jsonMsg.data.lamp.bri, 2) + nBit(0, 11);
         break;
         //sync
     case 'sync':
-        bStream += '01000';
-        bStream += nBit(0, 10);
-        bStream += '0';
-        bStream += nBit(0, 2);
-        bStream += nBit(msg.data.hour, 5);
-        bStream += nBit(msg.data.minute, 6);
+        bitStream = '01000' + nBit(0, 10) + '0' + nBit(0, 2) + nBit(jsonMsg.data.hour, 5) + nBit(jsonMsg.data.minute, 6);
         break;
         //broadcast
     case CLUSOBJ:
-        bStream += '00100';
-        bStream += nBit(0, 10);
-        bStream += '0';
-        bStream += nBit(msg.data[CLUSOBJ].bri, 2);
-        bStream += nBit(0, 11);
+        bitStream = '00100' + nBit(0, 10) + '0' + nBit(jsonMsg.data[CLUSOBJ].bri, 2) + nBit(0, 11);
         break;
         //status
     case 'status':
-        bStream += '00010';
-        bStream += nBit(msg.data.lamp.iid, 10);
-        bStream += '0';
-        bStream += nBit(0, 13);
+        bitStream = '00010' + nBit(jsonMsg.data.lamp.iid, 10) + '0' + nBit(0, 13);
         break;
     }
-    return makeStringMsg('bs', {
-        bs: bStream
+    if (jsonMsg.rerouted === true) bitStream = bitStream.substring(0, 4) + '1' + bitStream.substring(5);
+    let byteStream = '';
+    for (let i = 0; i < 5; i += 1) {
+        byteStream += parseInt(bitStream.substr(i * 7, 7), 2) + ' '
+    };
+    return byteStream.substring(0, byteStream.length - 1);
+}
+
+function toClusterListeners(cid, jsonMsg) {
+    if (clusterListeners[cid]) clusterListeners[cid].forEach(function (client) {
+        if (client.type === WEBCLIENT) safeSend(client, JSON.stringify(jsonMsg), postSendCallBack);
     });
 }
 
-function toClusterListeners(cid, msg, toAll = false) {
-    if (clusterListeners.hasOwnProperty(cid)) {
-        clusterListeners[cid].forEach(function (client) {
-            if (client.type === WEBCLIENT) safeSend(client, JSON.stringify(msg), postSendCallBack);
-            else if (toAll && client.type === TERMINAL) safeSend(client, makeBits(msg), postSendCallBack);
-        });
-    }
-}
-
-function toTerminalListeners(msg) {
+function toTerminalListeners(jsonMsg) {
+    let msg = JSON.stringify(jsonMsg);
     terminalListeners.forEach(function (client) {
         if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
     });
@@ -509,9 +526,11 @@ function sendCluster(cid, client) {
                 if (client.type === WEBCLIENT) safeSend(client, makeStringMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.jsonify()
                 }), postSendCallBack);
-                else if (client.type === TERMINAL) safeSend(client, makeBits(makeJsonMsg(LAMPOBJ, {
-                    [LAMPOBJ]: lamp.jsonify()
-                })), postSendCallBack);
+                else if (client.type === TERMINAL) {
+                    safeSend(client, makeStringTermMsg(LAMPOBJ, {
+                        [LAMPOBJ]: lamp.jsonify()
+                    }), postSendCallBack);
+                }
             });
         });
     }
@@ -539,6 +558,12 @@ function removeUserStatusListener(client) {
     if (!client) return;
     var index = userStatusListeners.indexOf(client);
     if (index > -1) userStatusListeners.splice(index, 1);
+}
+
+function removeLogListener(client) {
+    if (!client) return;
+    var index = logListeners.indexOf(client);
+    if (index > -1) logListeners.splice(index, 1);
 }
 
 function loadConfig(config, username) {
@@ -854,7 +879,7 @@ function registerDevice(req, res) {
             }
             log.info('[%s] Registered terminal %s', req.body.username, dev.username);
             res.end('success');
-            toTerminalListeners(makeStringMsg(TERMOBJ, {
+            toTerminalListeners(makeJsonMsg(TERMOBJ, {
                 [TERMOBJ]: terminal.secureJsonify()
             }));
         });
@@ -909,10 +934,12 @@ function registerUser(req, done) {
     })
 }
 var debug = require('debug')('nodeserver:server')
-var http = require('http')
+var http = require('http');
+var https = require('https');
 var port = normalizePort(process.env.PORT || '80')
 app.set('port', port)
-var server = http.createServer(app)
+var server = http.createServer(app);
+https.createServer(options, app).listen(443);
 server.listen(port)
 server.on('error', onError)
 server.on('listening', onListening)
@@ -1020,10 +1047,12 @@ function removeUser(client) {
 }
 
 function addTerminal(client) {
+    rerouteMap[client.cid] = undefined;
     terminalClients[client.cid] = client;
 }
 
 function removeTerminal(client) {
+    rerouteMap[client.cid] = client.fcid;
     removeClusterListener(client.cid, client);
     delete terminalClients[client.cid];
 }
@@ -1034,7 +1063,7 @@ function onAuth(cred, client, pass, fail) {
             successMsg = '[%s] Terminal auth to socketServer';
         Terminal.findOne({
             username: cred.username
-        }, ['password', 'cid'], function (err, terminal) {
+        }, ['password', 'cid', 'fcid'], function (err, terminal) {
             if (err) {
                 log.error(failedMsg, cred.username, {
                     stack: err.stack
@@ -1052,11 +1081,19 @@ function onAuth(cred, client, pass, fail) {
                 client.username = cred.username;
                 client.cid = terminal.cid;
                 client.type = cred.type;
+                client.fcid = terminal.fcid;
+                addTerminal(client);
                 safeSend(client, makeStringMsg('auth', {
                     state: 'pass'
                 }), postSendCallBack);
-                addTerminal(client);
-                toTerminalListeners(makeStringMsg(TERMOBJ, {
+                let time = {
+                    hour: moment().get('hour'),
+                    minute: moment().get('minute')
+                };
+                time.minute = time.minute % 2 == 1 ? time.minute + 1 : time.minute;
+                safeSend(client, makeStringTermMsg('sync', time));
+                sendCluster(client.cid, client);
+                toTerminalListeners(makeJsonMsg(TERMOBJ, {
                     [TERMOBJ]: terminal.secureJsonify()
                 }));
                 log.info(successMsg, client.username);
@@ -1137,10 +1174,18 @@ wss.on('connection', function (client, req) {
 function respond(msg, client) {
     switch (msg.type) {
     case 'bs':
-        msg = parseBitStream(msg.data.bs);
+        msg = parseByteStream(msg.data.bs);
         switch (msg.type) {
         case 'status':
             onRecievingLampStatus(msg.data[LAMPOBJ]);
+            break;
+        case 'termLampDisconnection':
+            log.warn('Detected terminal lamp disconnection');
+            rerouteMap[client.cid] = client.fcid;
+            break;
+        case 'termLampConnection':
+            log.warn('Detected terminal lamp re-connection');
+            rerouteMap[client.cid] = undefined;
             break;
         }
         break;
@@ -1159,7 +1204,7 @@ function respond(msg, client) {
                 });
                 break;
             }
-            log.info('[%s] Listening to lamp cluster %s', client.username, msg.data.cid);
+            log.info('[%s] listening to cluster %s', client.username, msg.data.cid);
             if (clusterListeners.hasOwnProperty(msg.data.cid)) {
                 clusterListeners[msg.data.cid].push(client);
             } else {
@@ -1175,6 +1220,10 @@ function respond(msg, client) {
         case 'userStatus':
             log.info('[%s] Listening to userStatus', client.username);
             userStatusListeners.push(client);
+            break;
+        case 'logs':
+            log.info('[%s] Listening to logs', client.username);
+            logListeners.push(client);
             break;
         default:
             log.warn('[%s] Invalid msg', client.username, {
@@ -1193,7 +1242,7 @@ function respond(msg, client) {
                 log.warn('[%s] Invalid msg %s', client.username, msg.toString());
                 break;
             }
-            log.info('[%s] Stopped listening to lamp cluster %s', client.username, msg.data.cid);
+            log.info('[%s] Stopped listening to cluster %s', client.username, msg.data.cid);
             removeClusterListener(msg.data.cid, client);
             break;
         case 'serverConfig':
@@ -1201,8 +1250,12 @@ function respond(msg, client) {
             removeSConfigListener(client);
             break;
         case 'userStatus':
-            log.info('[%s] Listening to userStatus', client.username);
+            log.info('[%s] Stopped listening to userStatus', client.username);
             removeUserStatusListener(client);
+            break;
+        case 'logs':
+            removeLogListener(client);
+            log.info('[%s] Stopped listening to logs', client.username);
             break;
         }
         break;
@@ -1240,7 +1293,7 @@ function respond(msg, client) {
                     type: 'info',
                     msg: "Added terminal"
                 }), postSendCallBack);
-                toTerminalListeners(makeStringMsg(TERMOBJ, {
+                toTerminalListeners(makeJsonMsg(TERMOBJ, {
                     [TERMOBJ]: newTerminal.secureJsonify()
                 }));
             });
@@ -1290,7 +1343,7 @@ function respond(msg, client) {
                         }, {
                             upsert: true
                         }, err => {
-                            log.error('[%s] Couldn\'t add lamp', client.username, {
+                            if (err) log.error('[%s] Couldn\'t add lamp', client.username, {
                                 stack: err.stack
                             });
                         });
@@ -1304,7 +1357,10 @@ function respond(msg, client) {
                         }), postSendCallBack);
                         toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
                             [LAMPOBJ]: newLamp.jsonify()
-                        }), true);
+                        }));
+                        safeSendTerm(newLamp.cid, makeJsonMsg(LAMPOBJ, {
+                            [LAMPOBJ]: newLamp.jsonify()
+                        }));
                     });
                 });
             });
@@ -1342,7 +1398,10 @@ function respond(msg, client) {
                 }), postSendCallBack);
                 toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
                     [CLUSOBJ]: msg.data.cluster
-                }), true);
+                }));
+                safeSendTerm(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
+                    [CLUSOBJ]: msg.data.cluster
+                }));
             });
             break;
         case 'serverConfig':
@@ -1410,11 +1469,30 @@ function respond(msg, client) {
                 }), postSendCallBack)
                 toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lamp.miniJsonify()
-                }), true)
+                }));
+                safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp.miniJsonify()
+                }));
             });
             break;
         }
         break;
+    }
+}
+
+function safeSendTerm(cid, jsonMsg) {
+    let final_cid = rerouteMap[cid] === undefined ? cid : rerouteMap[cid];
+    let client = terminalClients[final_cid];
+    if (client == undefined) return;
+    jsonMsg.rerouted = final_cid !== cid;
+    let msg = JSON.stringify({
+        type: 'bs',
+        bs: makeBits(jsonMsg)
+    });
+    try {
+        client.send(msg);
+    } catch (err) {
+        if (client.type == TERMINAL) removeTerminal(client);
     }
 }
 
@@ -1428,22 +1506,40 @@ function safeSend(client, msg) {
     }
 }
 
-function parseBitStream(msg) {
-    var jmsg = {}
-    switch (msg.substr(0, 5)) {
+function parseByteStream(byteStream) {
+    let bitStream = '';
+    for (let byte in byteStream.split(' ')) bitStream += nBit(byte, 7);
+    let jmsg = {};
+    switch (bitStream.substring(0, 5)) {
     case '00010':
-        jmsg.type = 'status'
+    case '00011':
+        jmsg.type = 'status';
         jmsg.data = {
             type: LAMPOBJ,
             [LAMPOBJ]: {
-                iid: parseInt(msg.substr(5, 10), 2),
-                on: msg.substr(15, 1) === '0' ? false : true,
-                bri: parseInt(msg.substr(16, 2), 2)
+                iid: parseInt(bitStream.substr(5, 10), 2),
+                on: bitStream.substr(15, 1) === '0' ? false : true,
+                bri: parseInt(bitStream.substr(16, 2), 2)
             }
-        }
-        break
+        };
+        break;
+    case '10011':
+        jmsg.type = 'status';
+        jmsg.data = {
+            type: LAMPOBJ,
+            [LAMPOBJ]: {
+                iid: parseInt(bitStream.substr(5, 10), 2)
+            }
+        };
+        break;
+    case '00111':
+        jmsg.type = 'termLampDisconnection';
+        break;
+    case '01111':
+        jmsg.type = 'termLampConnection';
+        break;
     }
-    return jmsg
+    return jmsg;
 }
 //-------------------------------------------------------------------------------------
 schedule.scheduleJob({
@@ -1466,20 +1562,18 @@ schedule.scheduleJob({
 })
 var timeTime = {
     hour: '*',
-    minute: '*',
+    minute: '*/2',
     second: '0'
 }
-//`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
+// `${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
 schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * * *`, function () {
-    var bStream = makeBits(makeJsonMsg('sync', {
+    var msg = makeJsonMsg('sync', {
         hour: moment().get('hour'),
         minute: moment().get('minute')
-    }))
-    for (var cid in terminalClients) {
-        if (terminalClients.hasOwnProperty(cid)) safeSend(terminalClients[cid], bStream);
-    }
-    log.info('[%s] Sent time to all terminals', AUTO)
-})
+    });
+    for (var cid in terminalClients) safeSendTerm(cid, msg);
+    log.info('[%s] Sync terminal clocks', AUTO)
+});
 var clusterIdIndex = 0,
     clusterIds = [],
     nextLampId, currentLamp, clusterFine, currentCluster
@@ -1499,6 +1593,7 @@ function loadAllClusterIds(callback) {
 }
 // Loads _id of lamps of next cluster
 function loadHeadOfNextCluster() {
+    prevLampTimedOut = false;
     if (clusterIdIndex >= clusterIds.length) {
         clusterIdIndex = 0;
         setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenStatusChecks);
@@ -1506,7 +1601,7 @@ function loadHeadOfNextCluster() {
     }
     Terminal.findOne({
         _id: clusterIds[clusterIdIndex++]
-    }, ['head', 'cid'], function (err, cluster) {
+    }, ['head', 'cid', 'fcid'], function (err, cluster) {
         if (err) {
             log.error('[%s] Couldn\'t get cluster', AUTO, {
                 stack: err.stack
@@ -1517,15 +1612,17 @@ function loadHeadOfNextCluster() {
         log.info('[%s] Checking cluster %d', AUTO, cluster.cid);
         if (!terminalClients.hasOwnProperty(cluster.cid)) {
             updateTerminalStatus(cluster.cid, TERM.OFFLINE);
-            setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
-            return;
-        } else {
-            nextLampId = cluster.head
-            currentCluster = cluster
-            clusterFine = true
-            setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);
+            rerouteMap[cluster.cid] = cluster.fcid;
+            if (cluster.fcid == undefined || !terminalClients.hasOwnProperty(cluster.fcid)) {
+                setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
+                return;
+            }
         }
-    })
+        nextLampId = cluster.head;
+        currentCluster = cluster;
+        clusterFine = true;
+        setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);
+    });
 }
 var timeoutTimer;
 
@@ -1550,13 +1647,59 @@ function markLampDisconnected(id) {
         markLampDisconnected(lamp.next);
     });
 }
+var startTime = 0,
+    prevLampTimedOut = false;
+
+function onLampTimeout(lamp) {
+    var fcid = rerouteMap[lamp.cid]
+    var fclient = fcid != undefined ? terminalClients[fcid] : undefined;
+    if (terminalClients[lamp.cid] == undefined && fclient == undefined) {
+        currentLamp = undefined;
+        nextLampId = undefined;
+        setTimeout(function () {
+            process.nextTick(loadHeadOfNextCluster);
+        }, sConfig.delayBetweenClusterStatusChecks);
+        log.warn('[%s] Terminal %d disconnected during check', AUTO, lamp.cid);
+        return;
+    }
+    log.warn('[%s] Timedout lamp %d->%d', AUTO, lamp.cid, lamp.lid);
+    lamp = currentLamp;
+    if (lamp.status != LAMP.DISCONNECTED) {
+        lamp.status = LAMP.DISCONNECTED;
+        clusterFine = false;
+        lamp.save(function (err) {
+            if (clusterListeners.hasOwnProperty(lamp.cid)) {
+                var msg = makeStringMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp.miniJsonify()
+                });
+                clusterListeners[lamp.cid].forEach(function (client) {
+                    if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
+                });
+            }
+        });
+        updateTerminalStatus(lamp.cid, TERM.FAULTYLAMP);
+    }
+    if (prevLampTimedOut) {
+        currentLamp = undefined;
+        nextLampId = undefined;
+        markLampDisconnected(lamp.next);
+        setTimeout(function () {
+            process.nextTick(loadHeadOfNextCluster);
+        }, sConfig.delayBetweenClusterStatusChecks);
+    } else {
+        prevLampTimedOut = true;
+        nextLampId = currentLamp.next;
+        currentLamp = undefined;
+        setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);
+    }
+}
 
 function askStatusOfNextLamp() {
     if (nextLampId == undefined) {
-        if (clusterFine) updateTerminalStatus(currentCluster.cid, TERM.ONLINESYNCED);
-        else updateTerminalStatus(currentCluster.cid, TERM.FAULTYLAMP);
+        if (clusterFine && rerouteMap[currentCluster.cid] == undefined) updateTerminalStatus(currentCluster.cid, TERM.ONLINESYNCED);
+        else if (rerouteMap[currentCluster.cid] == undefined) updateTerminalStatus(currentCluster.cid, TERM.FAULTYLAMP);
         setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
-        currentCluster = undefined
+        currentCluster = undefined;
         return;
     }
     Lamp.findOne({
@@ -1568,39 +1711,16 @@ function askStatusOfNextLamp() {
             });
             return;
         }
-        // ToDo Terminal disconnected in middle of status
-        safeSend(terminalClients[lamp.cid], makeBits(makeJsonMsg('status', {
-            [LAMPOBJ]: lamp.jsonify()
-        })), postSendCallBack)
-        currentLamp = lamp;
         log.info('[%s] Checking lamp %d->%d', AUTO, lamp.cid, lamp.lid);
+        startTime = moment().valueOf();
+        safeSendTerm(lamp.cid, makeJsonMsg('status', {
+            [LAMPOBJ]: lamp.jsonify()
+        }), postSendCallBack);
+        currentLamp = lamp;
         timeoutTimer = setTimeout(function () {
-            log.warn('[%s] Timedout lamp %d->%d', AUTO, lamp.cid, lamp.lid);
-            lamp = currentLamp;
-            if (lamp.status != LAMP.DISCONNECTED) {
-                lamp.status = LAMP.DISCONNECTED;
-                clusterFine = false;
-                lamp.save(function (err) {
-                    if (clusterListeners.hasOwnProperty(lamp.cid)) {
-                        var msg = makeStringMsg(LAMPOBJ, {
-                            [LAMPOBJ]: lamp.miniJsonify()
-                        });
-                        clusterListeners[lamp.cid].forEach(function (client) {
-                            if (client.type === WEBCLIENT) safeSend(client, msg, postSendCallBack);
-                        });
-                    }
-                });
-                //Todo You can do better
-                markLampDisconnected(lamp.next);
-                updateTerminalStatus(lamp.cid, TERM.FAULTYLAMP);
-            }
-            currentLamp = undefined;
-            nextLampId = undefined;
-            setTimeout(function () {
-                process.nextTick(loadHeadOfNextCluster)
-            }, sConfig.delayBetweenClusterStatusChecks);
+            onLampTimeout(lamp);
         }, sConfig.timeoutTimeForLampStatusCheck);
-    })
+    });
 }
 var dayStartTime = '08:00:00',
     dayEndTime = '17:00:00',
@@ -1615,6 +1735,8 @@ schedule.scheduleJob(`17 00 00 * * * *`, function () {
 function onRecievingLampStatus(gotLamp) {
     if (currentLamp == undefined || gotLamp.iid != currentLamp.iid) return;
     clearTimeout(timeoutTimer);
+    prevLampTimedOut = false;
+    var latency = moment().valueOf() - startTime;
     Lamp.findOne({
         _id: nextLampId
     }, function (err, lamp) {
@@ -1624,14 +1746,19 @@ function onRecievingLampStatus(gotLamp) {
             });
             return;
         }
-        log.info('[AUTO] Got status of lamp %d,%d', lamp.cid, lamp.lid);
-        if (gotLamp.iid != lamp.iid) {} else if (gotLamp.bri != lamp.bri || dayTime && gotLamp.on && lamp.bri != 0) {
+        log.info('[AUTO] Got status of lamp %d,%d (%dms)', lamp.cid, lamp.lid, latency);
+        if (gotLamp.on === undefined) {
+            onLampTimeout(lamp);
+        } else if (gotLamp.bri != lamp.bri || dayTime && gotLamp.on && lamp.bri != 0) {
             clusterFine = false
+            safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                [LAMPOBJ]: lamp.miniJsonify()
+            }));
             if (lamp.status != LAMP.FAULTY) {
-                lamp.status = LAMP.FAULTY
+                lamp.status = LAMP.FAULTY;
                 lamp.save(function (err) {
                     if (err) {
-                        return
+                        return;
                     }
                     if (clusterListeners.hasOwnProperty(lamp.cid)) {
                         clusterListeners[lamp.cid].forEach(function (client) {
@@ -1681,7 +1808,7 @@ function updateTerminalStatus(cid, status) {
                         stack: err.stack
                     });
                 }
-                toTerminalListeners(makeStringMsg(TERMOBJ, {
+                toTerminalListeners(makeJsonMsg(TERMOBJ, {
                     [TERMOBJ]: terminal.secureJsonify()
                 }));
             });

@@ -4,3 +4,6 @@ nodemon.json
 server.log
 .jsbeautifyrc
 .jslintrc
+config/*.csr
+config/*.key
+config/*.crt

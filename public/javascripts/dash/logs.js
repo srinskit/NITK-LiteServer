@@ -57,13 +57,16 @@ function eraseCookie(name) {
     createCookie(name, "", -1);
 }
 process = function (data) {
-    console.log(data.data)
+    console.log(data)
     switch (data.type) {
         case 'auth':
             if (data.data.state === 'pass') {
                 wsoc.send(makeMsg('addListener', {
                     loc: 'serverConfig'
-                }))
+                }));
+                wsoc.send(makeMsg('addListener', {
+                    loc: 'logs'
+                }));
             } else {
                 alert('Auth error! Try logging in again')
             }
@@ -73,5 +76,8 @@ process = function (data) {
 removeListenersBeforeClose = function () {
     wsoc.send(makeMsg('removeListener', {
         'loc': 'serverConfig'
-    }))
+    }));
+    wsoc.send(makeMsg('removeListener', {
+        'loc': 'logs'
+    }));
 }

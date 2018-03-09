@@ -72,7 +72,7 @@ abel> <style>#addDiv #idInputs input{box-sizing:border-box;width:100%} </style> 
     marker.infoWindow.isOpen = true
     google.maps.event.addListener(marker.infoWindow, 'domready', function () {
         $('#addDiv input[name="iType"]').click(function () {
-            $('#addDiv input[name=iLID]').prop('disabled', this.value === TERMOBJ);
+            $('#addDiv input[name=iLID]').prop('placeholder', this.value === TERMOBJ ? 'Fallback CID' : 'LID');
         });
         $('#addDiv input[name="addButton"]').on('click', function () {
             var data = {
@@ -82,6 +82,7 @@ abel> <style>#addDiv #idInputs input{box-sizing:border-box;width:100%} </style> 
                 iid: $('#addDiv [name="iIID"]').val(),
                 cid: $('#addDiv [name="iCID"]').val(),
                 lid: data.type === TERMOBJ ? undefined : $('#addDiv [name="iLID"]').val(),
+                fcid: data.type === TERMOBJ ? $('#addDiv [name="iLID"]').val() : undefined,
                 loc: {
                     lat: event.latLng.lat(),
                     lng: event.latLng.lng()
@@ -231,7 +232,7 @@ function updateTerminal(terminal) {
                     return;
                 }
                 marker.infoWindow = new google.maps.InfoWindow({
-                    content: `<div style="font-size:large" id="infoTerm${myTerm.cid}"> <label>CID: ${myTerm.cid}</label> <label name="iid" style="float:right;">IID: ${myTerm.iid}</label>` + `<br> <label name='status'>Status: ${terminalStatusText[myTerm.status]}</label> <br> <label name='ip'>IP: ${myTerm.ip} </label><br> <div >` + `Set brightness: <select name="bri" style="float:right;"> <option value="-1" selected> </option> <option val` + `ue="0">0</option> <option value="1">1</option> <option value="2">2</option> <option value="3">3</option> </select> </div> <br>` + `Show Lamps <label class="switch" style="float:right;"><input name="toggleLampView" type="checkbox"><div class="slider"></div></label><br></div>`
+                    content: `<div style="font-size:large" id="infoTerm${myTerm.cid}"><div class='buttonWrap'>` + `<div class='x'><input class='imageButton' name='toggleLampView' type='image' alt='Toggle lamp view' height=25></div>` + `<div class='x'><input class='imageButton' src='${intIconRoot}sync.svg' name='sync' type='image' alt='Force Sync' height=25></div>` + `<div class='x'><select class='imageButton' name="bri"> <option value="-1" selected></option> <option value="0">0</option> <option value="1">1</option> <option value="2">2</option> <option value="3">3</option> </select></div>` + `</div>` + `<label>CID: ${myTerm.cid}</label> <label name="iid" style="float:right;">IID: ${myTerm.iid}</label>` + `<br> <label name='status'>Status: ${terminalStatusText[myTerm.status]}</label> <br> <label name='ip'>IP: ${myTerm.ip} </label><br> <div >` + `<br></div>`
                 });
                 google.maps.event.addListener(marker.infoWindow, 'domready', function () {
                     if (selectedTerminalMarker && selectedTerminalMarker != marker) {
@@ -245,10 +246,13 @@ function updateTerminal(terminal) {
                         delete selectedTerminalMarker.infoWindow
                     }
                     selectedTerminalMarker = marker
-                    $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('checked', isShowingLamps[myTerm.cid])
+                    $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('src', isShowingLamps[myTerm.cid] ? `${intIconRoot}hide.png` : `${intIconRoot}show.png`);
+                    $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('title', isShowingLamps[myTerm.cid] ? 'Hide lamps' : 'Show lamps');
                     $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).on('click', function () {
                         TerminalbPressed(myTerm.cid)
                         isShowingLamps[myTerm.cid] = !isShowingLamps[myTerm.cid]
+                        $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('src', isShowingLamps[myTerm.cid] ? `${intIconRoot}hide.png` : `${intIconRoot}show.png`);
+                        $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('title', isShowingLamps[myTerm.cid] ? 'Hide lamps' : 'Show lamps');
                     })
                     if (!user.admin && !server.override) $(`#infoTerm${myTerm.cid} select[name="bri"]`).prop('disabled', true);
                     else $(`#infoTerm${myTerm.cid} select[name="bri"]`).change(function () {

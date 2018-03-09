@@ -33,7 +33,7 @@ html
                                 label Level:
                             td
                                 select(name='level' style='width:100%;')
-                                    for level in ['all', 'info', 'error']
+                                    for level in ['all', 'info', 'warn', 'error']
                                         option(value= level selected= vars.level==level) #{level}
                             td
                                 input(type='submit' value='Get Logs' style='width:100%;')
