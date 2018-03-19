@@ -1,25 +1,32 @@
 doctype html
 html
-  head
-    title Admin (#{user.username})
-    link(rel='stylesheet',href='/stylesheets/dash/admin.css')
-  body
-    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
-    script(src='/javascripts/dash/admin.js')
-    script.
-        var username = '#{user.username}' 
-        var navConVisible = false
-    div(id='content')
-        div(id='realContent')
-            h1 Accounts
-            div(class='paddedDiv')
-                a(href='/dash/admin/create' target='_blank') Create an account
-                br
-                a(href='/dash/admin/users') Manage and check users 
-                br
-            h1 Override
-            div(class='paddedDiv')
-                span Manual override 
-                span(id='orText') 
-                input(id='orInput' type='checkbox') 
-    include leftNav
+    head
+        title Admin (#{user.username})
+        link(rel='stylesheet',href='/stylesheets/dash/admin.css')
+    body
+        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/dash/admin.js')
+        script.
+            var username = '#{user.username}' 
+            var navConVisible = false
+        div(id='content')
+            div(id='realContent')
+                h1 Accounts
+                div(class='paddedDiv')
+                    a(class='ctrl' href='/dash/admin/create' target='_blank') Create an account
+                    br
+                    a(class='ctrl' href='/dash/admin/users') Manage and check users 
+                    br
+                h1 Override
+                div(class='paddedDiv')
+                    span Manual override 
+                    span(id='orText') 
+                    input(id='orInput' type='checkbox') 
+                h1 Manage Clusters, Terminals, Lamps
+                div(class='paddedDiv')
+                    a(class='ctrl' href='#') View terminal table
+                    br
+                    a(class='ctrl' href='#') Remove a lamp
+                    br
+
+        include leftNav

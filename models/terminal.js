@@ -38,7 +38,7 @@ termSchema.virtual('FAULTYLAMP').get(() => {
 termSchema.virtual('OFFLINE').get(() => {
     return 3;
 });
-termSchema.virtual('UNKNOWN').get(() => {
+termSchema.virtual('UNREG').get(() => {
     return 4;
 });
 
@@ -46,7 +46,7 @@ function isInt(n) {
     return Number(n) === n && n % 1 === 0;
 }
 termSchema.methods.initialiseAndCheck = function () {
-    this.status = this.UNKNOWN;
+    this.status = this.UNREG;
     this.online = false;
     this.enabled = false;
     this.ip = 'UNREG';

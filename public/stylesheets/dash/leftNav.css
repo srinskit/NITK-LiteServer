@@ -1,6 +1,7 @@
-html{
+html {
     font-family: "Arial", Arial, sans-serif;
 }
+
 #nav {
     position: fixed;
     height: 100%;
@@ -41,14 +42,14 @@ html{
     font-size: medium;
 }
 
-
 #navToggler::-moz-focus-inner {
-  border: 0;
+    border: 0;
 }
 
-#navToggler:hover{
+#navToggler:hover {
     box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2);
 }
+
 #navToggler:focus {
     outline: none;
 }
@@ -71,6 +72,7 @@ html{
     background-color: #0099ff;
     color: black;
 }
+
 html {
     height: 100%;
     margin: 0;

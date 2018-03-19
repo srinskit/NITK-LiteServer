@@ -59,18 +59,22 @@ function eraseCookie(name) {
 process = function (data) {
     console.log(data)
     switch (data.type) {
-        case 'auth':
-            if (data.data.state === 'pass') {
-                wsoc.send(makeMsg('addListener', {
-                    loc: 'serverConfig'
-                }));
-                wsoc.send(makeMsg('addListener', {
-                    loc: 'logs'
-                }));
-            } else {
-                alert('Auth error! Try logging in again')
-            }
-            break
+    case 'auth':
+        if (data.data.state === 'pass') {
+            wsoc.send(makeMsg('addListener', {
+                loc: 'serverConfig'
+            }));
+            wsoc.send(makeMsg('addListener', {
+                loc: 'logs'
+            }));
+        } else {
+            alert('Auth error! Try logging in again')
+        }
+        break;
+    case 'log':
+        log = data.data;
+        $("#logs tr:first").after(`<tr><td>${log.timestamp}</td><td>${log.level}</td><td>${log.message}</td></tr>`);
+        break;
     }
 }
 removeListenersBeforeClose = function () {
