@@ -25,7 +25,6 @@ module.exports = function (passport) {
         passReqToCallback: true
         // allows us to pass back the entire request to the callback
     }, function (req, username, password, done) {
-        var token = crypto.randomBytes(20).toString('hex');
         User.findOne({
             username: username
         }, function (err, user) {
@@ -48,14 +47,14 @@ module.exports = function (passport) {
                     errorMsg: 'Invalid Creds'
                 });
             }
-            user.token = token;
+            if (user.loggedIn !== true || user.token === undefined) user.token = crypto.randomBytes(20).toString('hex');
             user.loggedIn = true;
             user.save(err => {
                 if (err) return done(null, false, {
                     errorMsg: 'Internal error'
                 });
                 return done(null, user, {
-                    token: token
+                    token: user.token
                 });
             });
         });

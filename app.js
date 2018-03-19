@@ -31,9 +31,7 @@ var TERM = new Terminal();
 var LogMsg = require('./logMessages.js');
 // For India
 moment.tz('Asia/Kolkata').format();
-var options = {
-    key: fs.readFileSync('config/private.key'),
-};
+
 var options = {
     key: fs.readFileSync('config/private.key'),
     cert: fs.readFileSync('config/server.crt')
@@ -60,12 +58,20 @@ var wsTransport = {
     }
 };
 var log = new winston.Logger({
+    levels: {
+        error: 0,
+        warn: 1,
+        info: 2,
+        debug: 3
+    },
     transports: [new winston.transports.Console({
         timestamp: myTimeStamp,
-        colorize: true
+        colorize: true,
+        level: 'debug'
     }), new winston.transports.File({
         filename: 'server.log',
-        timestamp: myTimeStamp
+        timestamp: myTimeStamp,
+        level: 'info'
     }), wsTransport]
 });
 // Don't exit on error
@@ -108,7 +114,8 @@ ServerConfig.findOne({}, function (err, config) {
 });
 // Set all users offline
 User.update({}, {
-    online: false
+    online: false,
+    loggedIn: false
 }, {
     multi: true
 }, err => {
@@ -719,7 +726,7 @@ app.get('/dash/admin/users', userIsAdmin, function (req, res, next) {
         if (err) {
             log.error('[%s] Error getting users list', req.user.username, {
                 stack: err.stack
-            })
+            });
             return
         }
         res.render('dash/users', {
@@ -1170,6 +1177,7 @@ wss.on('connection', function (client, req) {
         });
     });
 })
+var pingTimer;
 
 function respond(msg, client) {
     switch (msg.type) {
@@ -1188,6 +1196,9 @@ function respond(msg, client) {
             rerouteMap[client.cid] = undefined;
             break;
         }
+        break;
+    case 'ping':
+        log.debug('[%s] Latency (%dms)', client.username, moment().valueOf() - pingTimer);
         break;
     case 'addListener':
         switch (msg.data.loc) {
@@ -1392,6 +1403,7 @@ function respond(msg, client) {
                     lamp.bri = clus.bri;
                     lamp.save();
                 });
+                log.info('[%s] Modified cluster %d to bri %d', client.username, msg.data.cluster.cid, msg.data.cluster.bri);
                 safeSend(client, makeStringMsg('notify', {
                     type: 'success',
                     msg: 'Modified Cluster'
@@ -1463,6 +1475,7 @@ function respond(msg, client) {
                     }), postSendCallBack)
                     return
                 }
+                log.info('[%s] Modified lamp %d,%d to bri %d', client.username, lamp.cid, lamp.lid, lamp.bri);
                 safeSend(client, makeStringMsg('notify', {
                     type: 'success',
                     msg: 'Modified lamp'
@@ -1508,7 +1521,8 @@ function safeSend(client, msg) {
 
 function parseByteStream(byteStream) {
     let bitStream = '';
-    for (let byte in byteStream.split(' ')) bitStream += nBit(byte, 7);
+    let tmp = byteStream.split(' ');
+    for (let i in tmp) bitStream += nBit(tmp[i], 7);
     let jmsg = {};
     switch (bitStream.substring(0, 5)) {
     case '00010':
@@ -1556,7 +1570,7 @@ schedule.scheduleJob({
             })
             return
         }
-        log.info('[%s] loaded config %s', AUTO, config.name)
+        log.info('[%s] loaded config %s', AUTO, config.name);
         loadConfig(config, AUTO)
     })
 })
@@ -1567,7 +1581,7 @@ var timeTime = {
 }
 // `${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
 schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * * *`, function () {
-    var msg = makeJsonMsg('sync', {
+    let msg = makeJsonMsg('sync', {
         hour: moment().get('hour'),
         minute: moment().get('minute')
     });
@@ -1576,7 +1590,7 @@ schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * *
 });
 var clusterIdIndex = 0,
     clusterIds = [],
-    nextLampId, currentLamp, clusterFine, currentCluster
+    nextLampId, currentLamp, clusterFine, currentCluster;
 // Loads all cluster _ids in to array clusterIds
 function loadAllClusterIds(callback) {
     Terminal.find({}, '_id', function (err, clusters) {
@@ -1601,7 +1615,7 @@ function loadHeadOfNextCluster() {
     }
     Terminal.findOne({
         _id: clusterIds[clusterIdIndex++]
-    }, ['head', 'cid', 'fcid'], function (err, cluster) {
+    }, ['head', 'cid', 'fcid', 'status'], function (err, cluster) {
         if (err) {
             log.error('[%s] Couldn\'t get cluster', AUTO, {
                 stack: err.stack
@@ -1609,7 +1623,11 @@ function loadHeadOfNextCluster() {
             setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
             return;
         }
-        log.info('[%s] Checking cluster %d', AUTO, cluster.cid);
+        if(cluster.status === TERM.UNREG){
+            process.nextTick(loadHeadOfNextCluster);
+            return;
+        }
+        log.debug('[%s] Checking cluster %d', AUTO, cluster.cid);
         if (!terminalClients.hasOwnProperty(cluster.cid)) {
             updateTerminalStatus(cluster.cid, TERM.OFFLINE);
             rerouteMap[cluster.cid] = cluster.fcid;
@@ -1618,6 +1636,8 @@ function loadHeadOfNextCluster() {
                 return;
             }
         }
+        safeSend(terminalClients[cluster.cid], makeStringMsg('ping'));
+        pingTimer = moment().valueOf();
         nextLampId = cluster.head;
         currentCluster = cluster;
         clusterFine = true;
@@ -1696,7 +1716,7 @@ function onLampTimeout(lamp) {
 
 function askStatusOfNextLamp() {
     if (nextLampId == undefined) {
-        if (clusterFine && rerouteMap[currentCluster.cid] == undefined) updateTerminalStatus(currentCluster.cid, TERM.ONLINESYNCED);
+        if (clusterFine && rerouteMap[currentCluster.cid] === undefined) updateTerminalStatus(currentCluster.cid, TERM.ONLINESYNCED);
         else if (rerouteMap[currentCluster.cid] == undefined) updateTerminalStatus(currentCluster.cid, TERM.FAULTYLAMP);
         setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenClusterStatusChecks);
         currentCluster = undefined;
@@ -1746,11 +1766,12 @@ function onRecievingLampStatus(gotLamp) {
             });
             return;
         }
-        log.info('[AUTO] Got status of lamp %d,%d (%dms)', lamp.cid, lamp.lid, latency);
         if (gotLamp.on === undefined) {
             onLampTimeout(lamp);
+            return;
         } else if (gotLamp.bri != lamp.bri || dayTime && gotLamp.on && lamp.bri != 0) {
-            clusterFine = false
+            log.debug('[AUTO] Got status(x) of lamp %d,%d (%dms)', lamp.cid, lamp.lid, latency);
+            clusterFine = false;
             safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
                 [LAMPOBJ]: lamp.miniJsonify()
             }));
@@ -1772,6 +1793,7 @@ function onRecievingLampStatus(gotLamp) {
                 })
             }
         } else {
+            log.debug('[AUTO] Got status of lamp %d,%d (%dms)', lamp.cid, lamp.lid, latency);
             if (lamp.status != LAMP.FINE) {
                 lamp.status = LAMP.FINE;
                 lamp.save(function (err) {
