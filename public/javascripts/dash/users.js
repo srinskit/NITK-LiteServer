@@ -58,7 +58,6 @@ function eraseCookie(name) {
 }
 
 process = function (data) {
-    console.log(data)
     switch (data.type) {
         case 'auth':
             if (data.data.state === 'pass') {
@@ -73,8 +72,8 @@ process = function (data) {
             }
             break
         case 'userStatus':
-            console.log(data.data.online === true)
-            $('#i' + data.data.username).prop('src', data.data.online === true ? '../../images/online.jpg' : '../../images/offline.jpg')
+            let user = data.data.user;
+            $('#i' + user.username).prop('src', user.online === true ? '../../images/online.jpg' : '../../images/offline.jpg')
             break
     }
 }
