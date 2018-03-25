@@ -254,6 +254,15 @@ function updateTerminal(terminal) {
                         $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('src', isShowingLamps[myTerm.cid] ? `${intIconRoot}hide.png` : `${intIconRoot}show.png`);
                         $(`#infoTerm${myTerm.cid} input[name="toggleLampView"]`).prop('title', isShowingLamps[myTerm.cid] ? 'Hide lamps' : 'Show lamps');
                     })
+                    $(`#infoTerm${myTerm.cid} input[name="sync"]`).on('click', function () {
+                        wsoc.send(makeMsg('requestStatus', {
+                            cid: myTerm.cid
+                        }));
+                        $(`#infoTerm${myTerm.cid} input[name="sync"]`).prop('disabled', true);
+                        setTimeout(function () {
+                            $(`#infoTerm${myTerm.cid} input[name="sync"]`).prop('disabled', false);
+                        }, 1000);
+                    })
                     if (!user.admin && !server.override) $(`#infoTerm${myTerm.cid} select[name="bri"]`).prop('disabled', true);
                     else $(`#infoTerm${myTerm.cid} select[name="bri"]`).change(function () {
                         LampModifyByCid(myTerm.cid, Number($(`#infoTerm${myTerm.cid} select[name="bri"]`).val()))

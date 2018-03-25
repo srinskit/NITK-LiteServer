@@ -1193,184 +1193,179 @@ function respond(msg, client) {
     switch (msg.type) {
     case 'emergency':
         Terminal.findOne({
-                'cid': client.cid
-            },['loc'], function (err, terminal) {
-                if (err) {
-                    log.error('[%s] Couldn\'t find terminal', client.username, {
-                        stack: err.stack
-                    });
-                }
-                var mailOptions = {
-                    from: '"srinag s" <itguylab@gmail.com>',
-                    to: 'srinagrao2007@gmail.com',
-                    subject: `${msg.data.service} requested by Aadhar# ${msg.data.id}`,
-                    html: `Send <strong>${msg.data.service}</strong> to terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}). \
-                    Aadhar# ${msg.data.id} needs help! Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
-                };
-                mailTrans.sendMail(mailOptions, function (error, info) {
-                    if (error) {
-                        return console.log(error);
-                    }
-                    console.log('Message sent: ' + info.response);
+            'cid': client.cid
+        }, ['loc'], function (err, terminal) {
+            if (err) {
+                log.error('[%s] Couldn\'t find terminal', client.username, {
+                    stack: err.stack
                 });
             }
-        );
-    log.info('[%s] %s service requested', client.username, msg.data.service);
-    break;
-case 'bs':
-    msg = parseByteStream(msg.data.bs);
-    switch (msg.type) {
-    case 'status':
-        onRecievingLampStatus(msg.data[LAMPOBJ]);
+            var mailOptions = {
+                from: '"srinag s" <itguylab@gmail.com>',
+                to: 'srinagrao2007@gmail.com',
+                subject: `${msg.data.service} requested by Aadhar# ${msg.data.id}`,
+                html: `Send <strong>${msg.data.service}</strong> to terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}). \
+                    Aadhar# ${msg.data.id} needs help! Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
+            };
+            mailTrans.sendMail(mailOptions, function (error, info) {
+                if (error) {
+                    return console.log(error);
+                }
+                console.log('Message sent: ' + info.response);
+            });
+        });
+        log.info('[%s] %s service requested', client.username, msg.data.service);
         break;
-    case 'termLampDisconnection':
-        log.warn('Detected terminal lamp disconnection');
-        rerouteMap[client.cid] = client.fcid;
+    case 'bs':
+        msg = parseByteStream(msg.data.bs);
+        switch (msg.type) {
+        case 'status':
+            onRecievingLampStatus(msg.data[LAMPOBJ]);
+            break;
+        case 'termLampDisconnection':
+            log.warn('Detected terminal lamp disconnection');
+            rerouteMap[client.cid] = client.fcid;
+            break;
+        case 'termLampConnection':
+            log.warn('Detected terminal lamp re-connection');
+            rerouteMap[client.cid] = undefined;
+            break;
+        }
         break;
-    case 'termLampConnection':
-        log.warn('Detected terminal lamp re-connection');
-        rerouteMap[client.cid] = undefined;
+    case 'ping':
+        log.debug('[%s] Latency (%dms)', client.username, moment().valueOf() - pingTimer);
         break;
-    }
-    break;
-case 'ping':
-    log.debug('[%s] Latency (%dms)', client.username, moment().valueOf() - pingTimer);
-    break;
-case 'addListener':
-    switch (msg.data.loc) {
-    case 'terminals':
-        log.info('[%s] Listening to terminals', client.username);
-        terminalListeners.push(client);
-        sendTerminals(client);
+    case 'requestStatus':
+        if (client.type !== WEBCLIENT || msg.data.cid === undefined) return;
+        log.info('[%s] Req term%d status', client.username, msg.data.cid);
+        QaddFront(clusterIds[msg.data.cid - 1]);
+        if (statusCheckTimer !== undefined) {
+            clearTimeout(statusCheckTimer);
+            loadHeadOfNextCluster();
+        }
         break;
-    case 'lamps':
-        if (client.type === TERMINAL && client.cid != msg.data.cid) return;
-        if (msg.data.cid == undefined) {
+    case 'addListener':
+        switch (msg.data.loc) {
+        case 'terminals':
+            log.info('[%s] Listening to terminals', client.username);
+            terminalListeners.push(client);
+            sendTerminals(client);
+            break;
+        case 'lamps':
+            if (client.type === TERMINAL && client.cid != msg.data.cid) return;
+            if (msg.data.cid == undefined) {
+                log.warn('[%s] Invalid msg', client.username, {
+                    msg: msg
+                });
+                break;
+            }
+            log.info('[%s] listening to cluster %s', client.username, msg.data.cid);
+            if (clusterListeners.hasOwnProperty(msg.data.cid)) {
+                clusterListeners[msg.data.cid].push(client);
+            } else {
+                clusterListeners[msg.data.cid] = [client];
+            }
+            sendCluster(msg.data.cid, client);
+            break;
+        case 'serverConfig':
+            log.info('[%s] Listening to serverConfig', client.username);
+            serverConfigListeners.push(client);
+            safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack);
+            break;
+        case 'userStatus':
+            log.info('[%s] Listening to userStatus', client.username);
+            userStatusListeners.push(client);
+            break;
+        case 'logs':
+            log.info('[%s] Listening to logs', client.username);
+            logListeners.push(client);
+            break;
+        default:
             log.warn('[%s] Invalid msg', client.username, {
                 msg: msg
             });
+        }
+        break
+    case 'removeListener':
+        switch (msg.data.loc) {
+        case 'terminals':
+            log.info('[%s] Stopped listening to terminals', client.username);
+            removeTerminalsListener(client);
+            break;
+        case 'lamps':
+            if (msg.data.cid == undefined) {
+                log.warn('[%s] Invalid msg %s', client.username, msg.toString());
+                break;
+            }
+            log.info('[%s] Stopped listening to cluster %s', client.username, msg.data.cid);
+            removeClusterListener(msg.data.cid, client);
+            break;
+        case 'serverConfig':
+            log.info('[%s] Stopped listening to serverConfig', client.username);
+            removeSConfigListener(client);
+            break;
+        case 'userStatus':
+            log.info('[%s] Stopped listening to userStatus', client.username);
+            removeUserStatusListener(client);
+            break;
+        case 'logs':
+            removeLogListener(client);
+            log.info('[%s] Stopped listening to logs', client.username);
             break;
         }
-        log.info('[%s] listening to cluster %s', client.username, msg.data.cid);
-        if (clusterListeners.hasOwnProperty(msg.data.cid)) {
-            clusterListeners[msg.data.cid].push(client);
-        } else {
-            clusterListeners[msg.data.cid] = [client];
-        }
-        sendCluster(msg.data.cid, client);
         break;
-    case 'serverConfig':
-        log.info('[%s] Listening to serverConfig', client.username);
-        serverConfigListeners.push(client);
-        safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack);
-        break;
-    case 'userStatus':
-        log.info('[%s] Listening to userStatus', client.username);
-        userStatusListeners.push(client);
-        break;
-    case 'logs':
-        log.info('[%s] Listening to logs', client.username);
-        logListeners.push(client);
-        break;
-    default:
-        log.warn('[%s] Invalid msg', client.username, {
-            msg: msg
-        });
-    }
-    break
-case 'removeListener':
-    switch (msg.data.loc) {
-    case 'terminals':
-        log.info('[%s] Stopped listening to terminals', client.username);
-        removeTerminalsListener(client);
-        break;
-    case 'lamps':
-        if (msg.data.cid == undefined) {
-            log.warn('[%s] Invalid msg %s', client.username, msg.toString());
+    case 'addObj':
+        if (sConfig.override !== true && client.admin !== true) {
+            log.warn('[%s] Attempt to addObj without prev', client.username);
             break;
         }
-        log.info('[%s] Stopped listening to cluster %s', client.username, msg.data.cid);
-        removeClusterListener(msg.data.cid, client);
-        break;
-    case 'serverConfig':
-        log.info('[%s] Stopped listening to serverConfig', client.username);
-        removeSConfigListener(client);
-        break;
-    case 'userStatus':
-        log.info('[%s] Stopped listening to userStatus', client.username);
-        removeUserStatusListener(client);
-        break;
-    case 'logs':
-        removeLogListener(client);
-        log.info('[%s] Stopped listening to logs', client.username);
-        break;
-    }
-    break;
-case 'addObj':
-    if (sConfig.override !== true && client.admin !== true) {
-        log.warn('[%s] Attempt to addObj without prev', client.username);
-        break;
-    }
-    switch (msg.data.type) {
-    case TERMOBJ:
-        var newTerminal = new Terminal(msg.data.terminal);
-        if (!newTerminal.initialiseAndCheck()) {
-            log.warn('[%s] Attempt to add invalid obj', client.username, {
-                msg: msg
-            });
-            safeSend(client, makeStringMsg('notify', {
-                type: 'error',
-                msg: "Coundn't add terminal"
-            }), postSendCallBack);
-            break;
-        }
-        newTerminal.save(function (err) {
-            if (err) {
-                log.error('[%s] Couldn\'t save terminal', client.username, {
-                    stack: err.stack
+        switch (msg.data.type) {
+        case TERMOBJ:
+            var newTerminal = new Terminal(msg.data.terminal);
+            if (!newTerminal.initialiseAndCheck()) {
+                log.warn('[%s] Attempt to add invalid obj', client.username, {
+                    msg: msg
                 });
                 safeSend(client, makeStringMsg('notify', {
                     type: 'error',
-                    msg: 'Couldn\'t add terminal (Internal)'
+                    msg: "Coundn't add terminal"
                 }), postSendCallBack);
+                break;
             }
-            clusterIds.push(newTerminal._id);
-            log.info('[%s] Added a terminal %s', client.username, msg.data.terminal.cid);
-            safeSend(client, makeStringMsg('notify', {
-                type: 'info',
-                msg: "Added terminal"
-            }), postSendCallBack);
-            toTerminalListeners(makeJsonMsg(TERMOBJ, {
-                [TERMOBJ]: newTerminal.secureJsonify()
-            }));
-        });
-        break;
-    case LAMPOBJ:
-        var newLamp = new Lamp(msg.data.lamp);
-        if (!newLamp.initialiseAndCheck()) {
-            log.warn('[%s] Attempt to add invalid obj', client.username, {
-                msg: msg
+            newTerminal.save(function (err) {
+                if (err) {
+                    log.error('[%s] Couldn\'t save terminal', client.username, {
+                        stack: err.stack
+                    });
+                    safeSend(client, makeStringMsg('notify', {
+                        type: 'error',
+                        msg: 'Couldn\'t add terminal (Internal)'
+                    }), postSendCallBack);
+                }
+                clusterIds.push(newTerminal._id);
+                log.info('[%s] Added a terminal %s', client.username, msg.data.terminal.cid);
+                safeSend(client, makeStringMsg('notify', {
+                    type: 'info',
+                    msg: "Added terminal"
+                }), postSendCallBack);
+                toTerminalListeners(makeJsonMsg(TERMOBJ, {
+                    [TERMOBJ]: newTerminal.secureJsonify()
+                }));
             });
-            safeSend(client, makeStringMsg('notify', {
-                type: 'error',
-                msg: 'Coundn\'t add lamp'
-            }), postSendCallBack);
             break;
-        }
-        newLamp.save(function (err) {
-            if (err) {
-                log.error('[%s] Couldn\'t add lamp', client.username, {
-                    stack: err.stack
+        case LAMPOBJ:
+            var newLamp = new Lamp(msg.data.lamp);
+            if (!newLamp.initialiseAndCheck()) {
+                log.warn('[%s] Attempt to add invalid obj', client.username, {
+                    msg: msg
                 });
                 safeSend(client, makeStringMsg('notify', {
                     type: 'error',
-                    msg: 'Coundn\'t add lamp(Internal)'
+                    msg: 'Coundn\'t add lamp'
                 }), postSendCallBack);
-                return;
+                break;
             }
-            Terminal.findOne({
-                'cid': msg.data.lamp.cid
-            }, ['lamps', 'head', 'tail'], function (err, terminal) {
+            newLamp.save(function (err) {
                 if (err) {
                     log.error('[%s] Couldn\'t add lamp', client.username, {
                         stack: err.stack
@@ -1381,152 +1376,165 @@ case 'addObj':
                     }), postSendCallBack);
                     return;
                 }
-                if (terminal.lamps.length === 0) terminal.head = newLamp._id;
-                else {
-                    Lamp.update({
-                        _id: terminal.lamps[terminal.lamps.length - 1]
-                    }, {
-                        next: newLamp._id
-                    }, {
-                        upsert: true
-                    }, err => {
-                        if (err) log.error('[%s] Couldn\'t add lamp', client.username, {
+                Terminal.findOne({
+                    'cid': msg.data.lamp.cid
+                }, ['lamps', 'head', 'tail'], function (err, terminal) {
+                    if (err) {
+                        log.error('[%s] Couldn\'t add lamp', client.username, {
                             stack: err.stack
                         });
+                        safeSend(client, makeStringMsg('notify', {
+                            type: 'error',
+                            msg: 'Coundn\'t add lamp(Internal)'
+                        }), postSendCallBack);
+                        return;
+                    }
+                    if (terminal.lamps.length === 0) terminal.head = newLamp._id;
+                    else {
+                        Lamp.update({
+                            _id: terminal.lamps[terminal.lamps.length - 1]
+                        }, {
+                            next: newLamp._id
+                        }, {
+                            upsert: true
+                        }, err => {
+                            if (err) log.error('[%s] Couldn\'t add lamp', client.username, {
+                                stack: err.stack
+                            });
+                        });
+                    }
+                    terminal.lamps.push(newLamp._id);
+                    terminal.save(err => {
+                        log.info('[%s] Added a lamp %d,%d', client.username, msg.data.lamp.cid, msg.data.lamp.lid);
+                        safeSend(client, makeStringMsg('notify', {
+                            type: 'success',
+                            msg: 'Added lamp'
+                        }), postSendCallBack);
+                        toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
+                            [LAMPOBJ]: newLamp.jsonify()
+                        }));
+                        safeSendTerm(newLamp.cid, makeJsonMsg(LAMPOBJ, {
+                            [LAMPOBJ]: newLamp.jsonify()
+                        }));
                     });
-                }
-                terminal.lamps.push(newLamp._id);
-                terminal.save(err => {
-                    log.info('[%s] Added a lamp %d,%d', client.username, msg.data.lamp.cid, msg.data.lamp.lid);
+                });
+            });
+            break;
+        }
+        break;
+    case 'modObj':
+        if (!sConfig.override && !client.admin) {
+            log.warn('[%s] Attempt to modObj without prev', client.username)
+            break
+        }
+        switch (msg.data.type) {
+        case CLUSOBJ:
+            var clus = msg.data.cluster
+            Terminal.findOne({
+                'cid': clus.cid,
+            }).populate('lamps', ['bri']).exec(function (err, cluster) {
+                if (err) {
+                    log.error('[%s] Couldn\'t mod obj', client.username, {
+                        stack: err.stack
+                    });
                     safeSend(client, makeStringMsg('notify', {
-                        type: 'success',
-                        msg: 'Added lamp'
+                        type: 'error',
+                        msg: 'Internal error'
                     }), postSendCallBack);
-                    toClusterListeners(newLamp.cid, makeJsonMsg(LAMPOBJ, {
-                        [LAMPOBJ]: newLamp.jsonify()
-                    }));
-                    safeSendTerm(newLamp.cid, makeJsonMsg(LAMPOBJ, {
-                        [LAMPOBJ]: newLamp.jsonify()
-                    }));
+                    return;
+                }
+                cluster.lamps.forEach(function (lamp) {
+                    lamp.bri = clus.bri;
+                    lamp.save();
                 });
-            });
-        });
-        break;
-    }
-    break;
-case 'modObj':
-    if (!sConfig.override && !client.admin) {
-        log.warn('[%s] Attempt to modObj without prev', client.username)
-        break
-    }
-    switch (msg.data.type) {
-    case CLUSOBJ:
-        var clus = msg.data.cluster
-        Terminal.findOne({
-            'cid': clus.cid,
-        }).populate('lamps', ['bri']).exec(function (err, cluster) {
-            if (err) {
-                log.error('[%s] Couldn\'t mod obj', client.username, {
-                    stack: err.stack
-                });
+                log.info('[%s] Modified cluster %d to bri %d', client.username, msg.data.cluster.cid, msg.data.cluster.bri);
                 safeSend(client, makeStringMsg('notify', {
-                    type: 'error',
-                    msg: 'Internal error'
+                    type: 'success',
+                    msg: 'Modified Cluster'
                 }), postSendCallBack);
-                return;
-            }
-            cluster.lamps.forEach(function (lamp) {
-                lamp.bri = clus.bri;
-                lamp.save();
+                toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
+                    [CLUSOBJ]: msg.data.cluster
+                }));
+                safeSendTerm(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
+                    [CLUSOBJ]: msg.data.cluster
+                }));
             });
-            log.info('[%s] Modified cluster %d to bri %d', client.username, msg.data.cluster.cid, msg.data.cluster.bri);
-            safeSend(client, makeStringMsg('notify', {
-                type: 'success',
-                msg: 'Modified Cluster'
-            }), postSendCallBack);
-            toClusterListeners(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
-                [CLUSOBJ]: msg.data.cluster
-            }));
-            safeSendTerm(msg.data.cluster.cid, makeJsonMsg(CLUSOBJ, {
-                [CLUSOBJ]: msg.data.cluster
-            }));
-        });
-        break;
-    case 'serverConfig':
-        var gConfig = new ServerConfig(msg.data.config);
-        var up = {};
-        if (gConfig.override === true || gConfig.override === false) {
-            up['override'] = gConfig.override;
-            sConfig.override = gConfig.override;
-        }
-        ServerConfig.update({}, {
-            '$set': up
-        }, {}, function (err) {
-            if (err) {
-                log.error('[%s] Couldn\'t mod objX', client.username, {
-                    stack: err.stack
-                });
+            break;
+        case 'serverConfig':
+            var gConfig = new ServerConfig(msg.data.config);
+            var up = {};
+            if (gConfig.override === true || gConfig.override === false) {
+                up['override'] = gConfig.override;
+                sConfig.override = gConfig.override;
+            }
+            ServerConfig.update({}, {
+                '$set': up
+            }, {}, function (err) {
+                if (err) {
+                    log.error('[%s] Couldn\'t mod objX', client.username, {
+                        stack: err.stack
+                    });
+                    safeSend(client, makeStringMsg('notify', {
+                        type: 'error',
+                        msg: 'Internal error'
+                    }), postSendCallBack);
+                    return;
+                }
                 safeSend(client, makeStringMsg('notify', {
-                    type: 'error',
-                    msg: 'Internal error'
+                    type: 'success',
+                    msg: 'Updated override'
                 }), postSendCallBack);
-                return;
-            }
-            safeSend(client, makeStringMsg('notify', {
-                type: 'success',
-                msg: 'Updated override'
-            }), postSendCallBack);
-            serverConfigListeners.forEach(function (client) {
-                safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack)
+                serverConfigListeners.forEach(function (client) {
+                    safeSend(client, makeStringMsg('serverConfig', sConfig.miniJsonify()), postSendCallBack)
+                });
             });
-        });
-        break
-    case LAMPOBJ:
-        var lamp = new Lamp(msg.data.lamp);
-        var up = {}
-        if (lamp.status !== undefined) up.status = lamp.status;
-        if (lamp.bri !== undefined) up.bri = lamp.bri;
-        if (lamp.loc.lat !== undefined) {
-            if (!up.loc) up.loc = {};
-            up.loc.lat = lamp.loc.lat;
-        }
-        if (lamp.loc.lng !== undefined) {
-            if (!up.loc) up.loc = {};
-            up.loc.lng = lamp.loc.lng;
-        }
-        Lamp.findOneAndUpdate({
-            'cid': lamp.cid,
-            'lid': lamp.lid
-        }, up, {
-            new: true
-        }, function (err, lamp) {
-            // console.log(lampi)
-            if (err) {
-                log.error('[%s] Couldn\'t mod obj', client.username, {
-                    stack: err.stack
-                })
+            break
+        case LAMPOBJ:
+            var lamp = new Lamp(msg.data.lamp);
+            var up = {}
+            if (lamp.status !== undefined) up.status = lamp.status;
+            if (lamp.bri !== undefined) up.bri = lamp.bri;
+            if (lamp.loc.lat !== undefined) {
+                if (!up.loc) up.loc = {};
+                up.loc.lat = lamp.loc.lat;
+            }
+            if (lamp.loc.lng !== undefined) {
+                if (!up.loc) up.loc = {};
+                up.loc.lng = lamp.loc.lng;
+            }
+            Lamp.findOneAndUpdate({
+                'cid': lamp.cid,
+                'lid': lamp.lid
+            }, up, {
+                new: true
+            }, function (err, lamp) {
+                // console.log(lampi)
+                if (err) {
+                    log.error('[%s] Couldn\'t mod obj', client.username, {
+                        stack: err.stack
+                    })
+                    safeSend(client, makeStringMsg('notify', {
+                        type: 'error',
+                        msg: 'Internal error'
+                    }), postSendCallBack)
+                    return
+                }
+                log.info('[%s] Modified lamp %d,%d to bri %d', client.username, lamp.cid, lamp.lid, lamp.bri);
                 safeSend(client, makeStringMsg('notify', {
-                    type: 'error',
-                    msg: 'Internal error'
+                    type: 'success',
+                    msg: 'Modified lamp'
                 }), postSendCallBack)
-                return
-            }
-            log.info('[%s] Modified lamp %d,%d to bri %d', client.username, lamp.cid, lamp.lid, lamp.bri);
-            safeSend(client, makeStringMsg('notify', {
-                type: 'success',
-                msg: 'Modified lamp'
-            }), postSendCallBack)
-            toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
-                [LAMPOBJ]: lamp.miniJsonify()
-            }));
-            safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
-                [LAMPOBJ]: lamp.miniJsonify()
-            }));
-        });
+                toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp.miniJsonify()
+                }));
+                safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                    [LAMPOBJ]: lamp.miniJsonify()
+                }));
+            });
+            break;
+        }
         break;
     }
-    break;
-}
 }
 
 function safeSendTerm(cid, jsonMsg) {
@@ -1624,9 +1632,31 @@ schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * *
     for (var cid in terminalClients) safeSendTerm(cid, msg);
     log.info('[%s] Sync terminal clocks', AUTO)
 });
-var clusterIdIndex = 0,
-    clusterIds = [],
+var clusterIds = [],
+    statusCheckTimer, lastFullStatusCheckTime = 0,
     nextLampId, currentLamp, clusterFine, currentCluster;
+var coreQ = [];
+
+function QaddBack(val) {
+    coreQ.push(val);
+}
+
+function QaddFront(val) {
+    coreQ.unshift(val);
+}
+
+function QgetFront() {
+    if (coreQ.length <= 0) return undefined;
+    return coreQ[0];
+}
+
+function QremoveFront(val) {
+    return coreQ.shift();
+}
+
+function Qempty() {
+    return coreQ.length === 0;
+}
 // Loads all cluster _ids in to array clusterIds
 function loadAllClusterIds(callback) {
     Terminal.find({}, '_id', function (err, clusters) {
@@ -1638,19 +1668,33 @@ function loadAllClusterIds(callback) {
         }
         // Map array of objects containing _id field to array of _id
         clusterIds = clusters.map(obj => obj._id);
+        coreQ = clusters.map(obj => obj._id);
         process.nextTick(callback);
     });
 }
 // Loads _id of lamps of next cluster
 function loadHeadOfNextCluster() {
     prevLampTimedOut = false;
-    if (clusterIdIndex >= clusterIds.length) {
-        clusterIdIndex = 0;
-        setTimeout(() => process.nextTick(loadHeadOfNextCluster), sConfig.delayBetweenStatusChecks);
+    if (Qempty()) {
+        if (moment().valueOf() - lastFullStatusCheckTime < sConfig.delayBetweenStatusChecks - 5000) {
+            var dt = sConfig.delayBetweenStatusChecks - (moment().valueOf() - lastFullStatusCheckTime);
+            statusCheckTimer = setTimeout(function () {
+                coreQ.push.apply(coreQ, clusterIds);
+                process.nextTick(loadHeadOfNextCluster);
+                statusCheckTimer = undefined;
+            }, dt < 0 ? 0 : dt);
+        } else {
+            lastFullStatusCheckTime = moment().valueOf();
+            statusCheckTimer = setTimeout(function () {
+                coreQ.push.apply(coreQ, clusterIds);
+                process.nextTick(loadHeadOfNextCluster);
+                statusCheckTimer = undefined;
+            }, sConfig.delayBetweenStatusChecks);
+        }
         return;
     }
     Terminal.findOne({
-        _id: clusterIds[clusterIdIndex++]
+        _id: QremoveFront()
     }, ['head', 'cid', 'fcid', 'status'], function (err, cluster) {
         if (err) {
             log.error('[%s] Couldn\'t get cluster', AUTO, {
@@ -1881,13 +1925,13 @@ function updateTerminalStatus(cid, status) {
 }
 // Autoexes
 // registerUser({body:{username:'admin',password:'pass',rpassword:'pass'},user:{username:'AUTO'}, flash:function(msg){}},function(){})
-respond({
-    type: 'emergency',
-    data: {
-        service: 'ambulance',
-        id: 'meow'
-    }
-}, {
-    cid: 1,
-    username: 'term1'
-});
+// respond({
+//     type: 'emergency',
+//     data: {
+//         service: 'ambulance',
+//         id: 'meow'
+//     }
+// }, {
+//     cid: 1,
+//     username: 'term1'
+// });
