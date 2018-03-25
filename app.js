@@ -30,6 +30,7 @@ var Terminal = require('./models/terminal.js');
 var LAMP = new Lamp();
 var TERM = new Terminal();
 var LogMsg = require('./logMessages.js');
+var upload = require('./routes/ad');
 // For India
 moment.tz('Asia/Kolkata').format();
 var options = {
@@ -163,6 +164,7 @@ app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
 // Router
+app.use('/upload', upload);
 app.get('/', function (req, res) {
     res.render('home', {
         isAuth: req.isAuthenticated()
