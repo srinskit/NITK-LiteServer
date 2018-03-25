@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 var bodyParser = require('body-parser');
-var multer = require('multer'); 
+var multer = require('multer');
 var path = require('path');
 var fs = require('fs');
 
@@ -10,16 +10,16 @@ router.use(bodyParser.urlencoded({ extended: false }));
 
 var length;
 
-const dir = "./public/images";
+const dir = "public/adImage";
 
 var setName = ()=>{
-    return fs.readdirSync(dir).length
+    return fs.readdirSync('./' + dir).length
 }
 
 var storage = multer.diskStorage({
     destination :(req, file, cb)=>{
-        cb(null,'public/images');
-    }, 
+        cb(null,dir);
+    },
     filename:  (req, file, cb)=>{
         cb(null, 'img' + setName() + '.png');
     }
@@ -45,7 +45,7 @@ router.get('/imgNo',(req,res,next)=>{
 });
 
 router.get('/:img',(req,res,next)=>{
-    res.sendFile(path.join(__dirname, '../public/images',req.params.img))
+    res.sendFile(path.join(__dirname, `../${dir}`,req.params.img))
 })
 
 
