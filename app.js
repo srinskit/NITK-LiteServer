@@ -32,6 +32,8 @@ var TERM = new Terminal();
 var LogMsg = require('./logMessages.js');
 var upload = require('./routes/ad');
 var ConfigScheduler = require('./models/configScheduler.js');
+var PollutionLog = require('./models/pollutionLog.js');
+var PowerLog = require('./models/powerLog.js');
 var AadharMap = require('./models/aadharMap.js');
 var powerConstants = {
     0: 0,
@@ -1436,9 +1438,21 @@ function respond(msg, client) {
                 if (err) return;
                 powerConstants[lamp.bri] = msg.data.value;
             });
+            let x = new PowerLog({
+                cid: client.cid,
+                value: msg.data.value,
+                time: myTimeStamp()
+            });
+            x.save(function (err) {});
             log.info('[%s] powerData= %d', client.username, msg.data.value);
             break;
         case 'pollutionData':
+            let y = new PollutionLog({
+                cid: client.cid,
+                value: msg.data.value,
+                time: myTimeStamp()
+            });
+            y.save(function (err) {});
             log.info('[%s] pollutionData= %d', client.username, msg.data.value);
             break;
         case 'termLampDisconnection':
@@ -1695,6 +1709,17 @@ function respond(msg, client) {
         break;
     case 'stat':
         switch (msg.data.query) {
+        case 'pollStatus':
+            PollutionLog.find({
+                cid: 2
+            }).sort('-date').limit(10).exec(function (err, pollLogs) {
+                if (err) return;
+                safeSend(client, makeStringMsg('stat', {
+                    type: 'pollStatus',
+                    data: pollLogs.map(obj => obj.value)
+                }));
+            });
+            break;
         case 'lampStatus':
             var lampStatusResponse = {};
             Lamp.aggregate([{
@@ -1940,7 +1965,7 @@ function parseByteStream(byteStream) {
     case '11100':
         jmsg.type = 'pollutionData';
         jmsg.data = {
-            value: parseInt(bitStream.substr(18), 2)
+            value: parseInt(bitStream.substr(18, 11), 2)
         };
         break;
     case '10011':
@@ -1986,29 +2011,31 @@ function parseByteStream(byteStream) {
 //     second: '*/30'
 // }
 function askPower() {
-    for (var cid in terminalClients) {
+    for (let cid in terminalClients) {
         Lamp.findOne({
             cid: cid,
             lid: 1
-        }, ['iid'], function (err, lamp) {
-            if (err || lamp === undefined || lamp.iid === undefined) return;
-            let msg = makeJsonMsg('powerData', {
-                lamp: {
-                    iid: lamp.iid
-                }
-            });
-            safeSendTerm(cid, msg);
-            msg = makeJsonMsg('pollutionData', {
-                lamp: {
-                    iid: lamp.iid
-                }
-            });
-            safeSendTerm(cid, msg);
-        });
+        }, ['iid'], function (cid) {
+            return function (err, lamp) {
+                if (err || lamp === undefined || lamp.iid === undefined) return;
+                let msg = makeJsonMsg('powerData', {
+                    lamp: {
+                        iid: lamp.iid
+                    }
+                });
+                safeSendTerm(cid, msg);
+                msg = makeJsonMsg('pollutionData', {
+                    lamp: {
+                        iid: lamp.iid
+                    }
+                });
+                safeSendTerm(cid, msg);
+            }
+        }(cid));
     };
     log.info('[%s] Asked power data', AUTO);
 }
-setInterval(askPower, 5000);
+setInterval(askPower, 30000);
 // nodeScheduler.scheduleJob(`${powerMonitorTime.second} ${powerMonitorTime.minute} ${powerMonitorTime.hour} * * * *`, );
 var timeTime = {
     hour: '*',

@@ -42,7 +42,7 @@ function drawTermChart(stats) {
     });
 }
 var powerArrData = [
-    ['Power', 'Time']
+    ['Time', 'Power']
 ];
 var powerCount = 0;
 
@@ -59,6 +59,23 @@ function drawPowerChart(stats, powerConstants) {
     powerArrData.push([powerCount, power]);
     var powerChart = new google.visualization.LineChart(document.getElementById('powerDataChart'));
     powerChart.draw(google.visualization.arrayToDataTable(powerArrData), {
+        curveType: 'line',
+        height: 400,
+        width: 1200,
+        legend: {
+            position: 'bottom'
+        }
+    });
+}
+
+function drawPollChart(arr) {
+    if (chartAPIinit == false) return;
+    let arrData = [
+        ['Time', 'Pollution']
+    ];
+    for (let i in arr) arrData.push([i, arr[i]]);
+    var pollChart = new google.visualization.LineChart(document.getElementById('pollDataChart'));
+    pollChart.draw(google.visualization.arrayToDataTable(arrData), {
         curveType: 'line',
         height: 400,
         width: 1200,
@@ -157,6 +174,9 @@ process = function (data) {
         break;
     case 'stat':
         switch (data.data.type) {
+        case 'pollStatus':
+            drawPollChart(data.data.data);
+            break;
         case 'lampStatus':
             drawLampChart(data.data.data);
             drawPowerChart(data.data.data, data.data.powerConstants);
@@ -181,6 +201,9 @@ setInterval(function () {
     }));
     wsoc.send(makeMsg('stat', {
         query: 'termStatus'
+    }));
+    wsoc.send(makeMsg('stat', {
+        query: 'pollStatus'
     }));
 }, 3000);
 removeListenersBeforeClose = function () {
