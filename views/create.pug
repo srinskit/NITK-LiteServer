@@ -1,10 +1,10 @@
 doctype html
 html
     head
-        title Create
+        title='Create'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet',href='/stylesheets/create.css')
     body
-        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/jquery.js')
         script(src='/javascripts/create.js')
         div(class='errorMsg')
             if errorMsg.length > 0

@@ -1,10 +1,10 @@
 doctype html
 html
     head
-        title Dash : Logs (#{user.username})
+        title='Logs'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet',href='/stylesheets/dash/logs.css')
     body
-        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/jquery.js')
         script(src='/javascripts/dash/logs.js')
         div(id='content')
             div(id='realContent')

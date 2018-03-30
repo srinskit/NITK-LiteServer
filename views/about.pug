@@ -1,7 +1,7 @@
 doctype html
 html
     head
-        title About Us
+        title='About us'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet',href='/stylesheets/about.css')
     body
         include topNav

@@ -1,8 +1,13 @@
 doctype html
 html
-  head
-    title Oops!
-  body
-      h1= message
-      h2= error.status
-      pre #{error.stack}
+    head
+        title='Error'+(isAuth ? ' | '+user.username : '')
+    body
+        h2='That\'s a '+error.status+'!'
+        p
+            | Would you like to 
+            a(href='/report')
+                | report
+            |  problem?
+        h2= error.status
+        pre #{error.stack}

@@ -31,8 +31,17 @@ var LAMP = new Lamp();
 var TERM = new Terminal();
 var LogMsg = require('./logMessages.js');
 var upload = require('./routes/ad');
+var ConfigScheduler = require('./models/configScheduler.js');
+var AadharMap = require('./models/aadharMap.js');
+var powerConstants = {
+    0: 0,
+    1: 5,
+    2: 10,
+    3: 15
+};
 // For India
-moment.tz('Asia/Kolkata').format();
+var timeZone = 'Asia/Kolkata';
+moment.tz(timeZone).format();
 var options = {
     key: fs.readFileSync('config/private.key'),
     cert: fs.readFileSync('config/server.crt')
@@ -98,6 +107,33 @@ var three = false,
 // Find last saved server config
 var sConfig;
 var rerouteMap = {};
+ConfigScheduler.find({}, function (err, schedules) {
+    if (err) {
+        return;
+    }
+    schedules.forEach(function (schedule) {
+        nodeScheduler.scheduleJob(schedule.id, prettyToCron(schedule.time), function (conName, recordId) {
+            return function () {
+                LampConfig.findOne({
+                    name: conName
+                }).populate('terminals.lamps.lamp').exec(function (err, config) {
+                    if (err) {
+                        log.error('[%s] Couldn\'t find config %s', AUTO, config.name, {
+                            stack: err.stack
+                        })
+                        return
+                    }
+                    log.info('[%s] loaded config %s', AUTO, config.name);
+                    loadConfig(config, AUTO)
+                });
+                ConfigScheduler.find({
+                    id: recordId
+                }).remove();
+            }
+        }(schedule.name, schedule.id));
+        log.info('[%s] Scheduled %s for %s', 'AUTO', schedule.name, schedule.time);
+    });
+});
 ServerConfig.findOne({}, function (err, config) {
     if (err) {
         log.error(LogMsg.dbNoServerConfig, AUTO);
@@ -164,27 +200,46 @@ app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
 // Router
+app.use(function (req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT,DELETE");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    next();
+});
 app.use('/upload', upload);
 app.get('/', function (req, res) {
     res.render('home', {
-        isAuth: req.isAuthenticated()
+        isAuth: req.isAuthenticated(),
+        user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+            username: ''
+        }
     });
 });
 app.get('/report', function (req, res) {
     res.render('report', {
-        isAuth: req.isAuthenticated()
+        isAuth: req.isAuthenticated(),
+        user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+            username: ''
+        }
     });
 });
 app.get('/about', function (req, res) {
     res.render('about', {
-        isAuth: req.isAuthenticated()
+        isAuth: req.isAuthenticated(),
+        user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+            username: ''
+        }
     });
 });
 app.get('/login', function (req, res) {
-    res.render('login', {
+    if (req.isAuthenticated()) res.redirect('/logout');
+    else res.render('login', {
         errorMsg: req.flash('errorMsg'),
         successMsg: req.flash('successMsg'),
-        isAuth: req.isAuthenticated()
+        isAuth: req.isAuthenticated(),
+        user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+            username: ''
+        }
     });
 });
 app.post('/login', function (req, res, next) {
@@ -265,6 +320,7 @@ app.get('/logout', userIsLoggedIn, function (req, res) {
 });
 app.get('/dash', userIsLoggedIn, function (req, res) {
     res.render('dash/dash', {
+        isAuth: req.isAuthenticated(),
         user: req.user.secureMiniJsonify()
     });
 });
@@ -277,6 +333,45 @@ function userIsAdmin(req, res, next) {
 }
 app.get('/logTerm', function (req, res) {
     res.end(getIpOfRequest(req));
+});
+app.get('/dash/stats', userIsLoggedIn, function (req, res) {
+    res.render('dash/stats', {
+        isAuth: req.isAuthenticated(),
+        user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+            username: ''
+        }
+    });
+});
+app.post('/dash/stats', userIsLoggedIn, function (req, res) {
+    console.log(req.body.submit);
+    if (req.body.submit === 'Get Lamp') {
+        if (req.body.cid == undefined || req.body.lid == undefined) return;
+        Lamp.findOne({
+            cid: req.body.cid,
+            lid: req.body.lid
+        }, function (err, lamp) {
+            res.render('dash/stats', {
+                isAuth: req.isAuthenticated(),
+                user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+                    username: ''
+                },
+                lamp: lamp.jsonify()
+            });
+        });
+    } else if (req.body.submit === 'Get Terminal') {
+        if (req.body.cid == undefined) return;
+        Terminal.findOne({
+            cid: req.body.cid
+        }, function (err, term) {
+            res.render('dash/stats', {
+                isAuth: req.isAuthenticated(),
+                user: req.isAuthenticated() ? req.user.secureMiniJsonify() : {
+                    username: ''
+                },
+                term: term.secureJsonify()
+            });
+        });
+    }
 });
 app.get('/dash/logs', userIsAdmin, function (req, res) {
     var fromDate, fromTime, untilDate, untilTime, ts = myTimeStamp();
@@ -336,6 +431,7 @@ app.get('/dash/logs', userIsAdmin, function (req, res) {
             }
         });
         res.render('dash/logs', {
+            isAuth: req.isAuthenticated(),
             user: req.user.secureMiniJsonify(),
             vars: {
                 fromDate: fromDate,
@@ -363,10 +459,20 @@ app.get('/dash/load', serverInOverride, function (req, res) {
             });
             return;
         }
-        res.render('dash/load', {
-            user: req.user.secureMiniJsonify(),
-            configs: configs,
-            msg: req.flash('msg')
+        ConfigScheduler.find({}, function (err, schedules) {
+            if (err) {
+                log.error('[%s] Error getting schedules', req.user.username, {
+                    stack: err.stack
+                });
+                return;
+            }
+            res.render('dash/load', {
+                isAuth: req.isAuthenticated(),
+                user: req.user.secureMiniJsonify(),
+                configs: configs,
+                schedules: schedules,
+                msg: req.flash('msg')
+            });
         });
     });
 });
@@ -489,6 +595,12 @@ function makeBits(jsonMsg) {
     case 'status':
         bitStream = '00010' + nBit(jsonMsg.data.lamp.iid, 10) + '0' + nBit(0, 13);
         break;
+    case 'powerData':
+        bitStream = '11000' + nBit(jsonMsg.data.lamp.iid, 10) + '0' + nBit(0, 13);
+        break;
+    case 'pollutionData':
+        bitStream = '11100' + nBit(jsonMsg.data.lamp.iid, 10) + '0' + nBit(0, 13);
+        break;
     }
     if (jsonMsg.rerouted === true) bitStream = bitStream.substring(0, 4) + '1' + bitStream.substring(5);
     let byteStream = '';
@@ -554,6 +666,14 @@ function sendCluster(cid, client) {
     }
 }
 
+function prettyToCron(pretty) {
+    let dateInput = pretty.split(' ')[0];
+    let timeInput = pretty.split(' ')[1];
+    let remDate = dateInput.split('-');
+    let remTime = timeInput.split(':');
+    return `00 ${remTime[1]} ${remTime[0]} ${remDate[2]} ${remDate[1]} * ${remDate[0]}`;
+}
+
 function removeTerminalsListener(client) {
     if (client === undefined) return;
     var index = terminalListeners.indexOf(client);
@@ -596,25 +716,23 @@ function loadConfig(config, username) {
                     });
                     return;
                 }
-                cluster.lamps.forEach(function (_id) {
-                    Lamp.update({
-                        _id: _id
-                    }, {
-                        bri: terminal.bri
-                    });
-                });
-                toClusterListeners(terminal.cid, makeJsonMsg(CLUSOBJ, {
+                for (let i = 0; i < cluster.lamps.length; ++i) Lamp.update({
+                    _id: cluster.lamps[i]
+                }, {
+                    bri: terminal.bri
+                }, function (err) {});
+                safeSendTerm(terminal.cid, makeJsonMsg(CLUSOBJ, {
                     [CLUSOBJ]: {
                         cid: terminal.cid,
                         bri: terminal.bri
                     }
-                }), true);
+                }));
             });
         } else {
             terminal.lamps.forEach(function (lampObj) {
                 lampObj.lamp.bri = lampObj.bri;
                 lampObj.lamp.save();
-                toClusterListeners(terminal.cid, makeJsonMsg(LAMPOBJ, {
+                safeSendTerm(terminal.cid, makeJsonMsg(LAMPOBJ, {
                     [LAMPOBJ]: lampObj.lamp
                 }), true);
             });
@@ -695,7 +813,77 @@ app.post('/dash/load', serverInOverride, function (req, res) {
             req.flash('msg', 'Error')
             res.redirect('/dash/load')
         }
-        break
+        break;
+    case 'Schedule':
+        if (req.body.configToSchedule == undefined || req.body.configToSchedule.length <= 0) {
+            log.warn('[%s] No config name', req.user.username);
+            req.flash('msg', 'Error');
+            res.redirect('/dash/load');
+        } else {
+            let stamp = myTimeStamp();
+            if (req.body.dateInput == undefined || req.body.dateInput.length < 10) req.body.dateInput = stamp.substr(0, 10);
+            if (req.body.timeInput == undefined || req.body.timeInput.length < 5) req.body.timeInput = stamp.substr(11, 5);
+            let cronTime = prettyToCron(req.body.dateInput + ' ' + req.body.timeInput);
+            let schedulerRecord = new ConfigScheduler({
+                name: req.body.configToSchedule,
+                time: req.body.dateInput + ' ' + req.body.timeInput
+            });
+            schedulerRecord.save();
+            nodeScheduler.scheduleJob(schedulerRecord.id, cronTime, function (conName, recordId) {
+                return function () {
+                    LampConfig.findOne({
+                        name: conName
+                    }).populate('terminals.lamps.lamp').exec(function (err, config) {
+                        if (err) {
+                            log.error('[%s] Couldn\'t find config %s', AUTO, config.name, {
+                                stack: err.stack
+                            })
+                            return
+                        }
+                        log.info('[%s] loaded config %s', AUTO, config.name);
+                        loadConfig(config, AUTO)
+                    });
+                    let schedule = ConfigScheduler.findOne({
+                        _id: recordId
+                    });
+                    schedule.remove(function (err) {
+                        if (err) return;
+                    });
+                }
+            }(req.body.configToSchedule, schedulerRecord.id));
+            log.info('[%s] Scheduled %s for %s', req.user.username, req.body.configToSchedule, req.body.dateInput + ' ' + req.body.timeInput);
+            res.redirect('/dash/load');
+        }
+        break;
+    case 'Cancel':
+        var array = req.body.cancel;
+        if (array != undefined && array.length > 0) {
+            ConfigScheduler.find({
+                _id: {
+                    $in: array
+                }
+            }, function (err, schedules) {
+                if (err) {
+                    log.error('[%s] Couldn\'t find schedules %s', req.user.username, array.toString())
+                    req.flash('msg', 'Error')
+                    res.redirect('/dash/load')
+                } else {
+                    schedules.forEach(function (schedule) {
+                        let job = nodeScheduler.scheduledJobs[schedule.id];
+                        if (job !== undefined) job.cancel();
+                        schedule.remove();
+                    });
+                    log.info('[%s] Cancelled schedules %s', req.user.username, array.toString())
+                    req.flash('msg', 'Cancelled')
+                    res.redirect('/dash/load')
+                }
+            });
+        } else {
+            log.warn('[%s] Invalid config ID %s', req.user.username, configID)
+            req.flash('msg', 'Error')
+            res.redirect('/dash/load')
+        }
+        break;
     default:
         log.warn('[%s] Invalid action %s', req.user.username, action)
         req.flash('msg', 'Error')
@@ -704,18 +892,21 @@ app.post('/dash/load', serverInOverride, function (req, res) {
 })
 app.get('/dash/map', userIsLoggedIn, function (req, res) {
     res.render('dash/map', {
+        isAuth: req.isAuthenticated(),
         user: req.user.secureMiniJsonify(),
         server: sConfig.miniJsonify()
     })
 })
 app.get('/dash/admin', userIsAdmin, function (req, res) {
     res.render('dash/admin', {
+        isAuth: req.isAuthenticated(),
         user: req.user.secureMiniJsonify(),
         sConfig: sConfig.secureJsonify()
     })
 })
 app.get('/dash/admin/create', userIsAdmin, function (req, res, next) {
     res.render('create', {
+        isAuth: req.isAuthenticated(),
         errorMsg: req.flash('errorMsg'),
         successMsg: req.flash('successMsg')
     })
@@ -741,6 +932,7 @@ app.get('/dash/admin/users', userIsAdmin, function (req, res, next) {
             return
         }
         res.render('dash/users', {
+            isAuth: req.isAuthenticated(),
             user: req.user.secureMiniJsonify(),
             users: users
         })
@@ -1001,7 +1193,7 @@ function onListening() {
     var bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port
     debug('Listening on ' + bind)
 }
-var schedule = require('node-schedule')
+var nodeScheduler = require('node-schedule-tz');
 var WebSocketServer = require('ws').Server
 var Url = require('url')
 var wss = new WebSocketServer({
@@ -1194,29 +1386,41 @@ var pingTimer;
 function respond(msg, client) {
     switch (msg.type) {
     case 'emergency':
-        Terminal.findOne({
-            'cid': client.cid
-        }, ['loc'], function (err, terminal) {
-            if (err) {
-                log.error('[%s] Couldn\'t find terminal', client.username, {
-                    stack: err.stack
+        AadharMap.findOne({
+            number: msg.data.id
+        }, function (err, victim) {
+            if (err) return err;
+            if (victim == undefined) log.info('[%s] %s service requested by unknown aadhar %d', client.username, msg.data.service, msg.data.id);
+            else {
+                let up = {}
+                up[`emergencyStat.${msg.data.service}`] = 1;
+                Terminal.findOneAndUpdate({
+                    'cid': client.cid
+                }, ['loc'], {
+                    $inc: up
+                }, function (err, terminal) {
+                    if (err) {
+                        log.error('[%s] Couldn\'t find terminal', client.username, {
+                            stack: err.stack
+                        });
+                    }
+                    var mailOptions = {
+                        from: '"EMERGENCY" <itguylab@gmail.com>',
+                        to: 'srinagrao2007@gmail.com',
+                        subject: `${msg.data.service} requested by Aadhar# ${msg.data.id}`,
+                        html: `Send <strong>${msg.data.service}</strong> to terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}). \
+                             ${victim.name} Aadhar# ${msg.data.id} needs help! Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
+                    };
+                    mailTrans.sendMail(mailOptions, function (error, info) {
+                        if (error) {
+                            return console.log(error);
+                        }
+                        console.log('Message sent: ' + info.response);
+                    });
                 });
+                log.info('[%s] %s service requested', client.username, msg.data.service);
             }
-            var mailOptions = {
-                from: '"srinag s" <itguylab@gmail.com>',
-                to: 'srinagrao2007@gmail.com',
-                subject: `${msg.data.service} requested by Aadhar# ${msg.data.id}`,
-                html: `Send <strong>${msg.data.service}</strong> to terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}). \
-                    Aadhar# ${msg.data.id} needs help! Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
-            };
-            mailTrans.sendMail(mailOptions, function (error, info) {
-                if (error) {
-                    return console.log(error);
-                }
-                console.log('Message sent: ' + info.response);
-            });
         });
-        log.info('[%s] %s service requested', client.username, msg.data.service);
         break;
     case 'bs':
         msg = parseByteStream(msg.data.bs);
@@ -1224,20 +1428,85 @@ function respond(msg, client) {
         case 'status':
             onRecievingLampStatus(msg.data[LAMPOBJ]);
             break;
+        case 'powerData':
+            Lamp.findOne({
+                cid: client.cid,
+                lid: 1
+            }, ['bri'], function (err, lamp) {
+                if (err) return;
+                powerConstants[lamp.bri] = msg.data.value;
+            });
+            log.info('[%s] powerData= %d', client.username, msg.data.value);
+            break;
+        case 'pollutionData':
+            log.info('[%s] pollutionData= %d', client.username, msg.data.value);
+            break;
         case 'termLampDisconnection':
-            log.warn('Detected terminal lamp disconnection');
+            log.warn('Terminal lamp not connected');
             rerouteMap[client.cid] = client.fcid;
+            Lamp.findOne({
+                cid: client.cid,
+                lid: 1
+            }, function (err, lamp) {
+                if (err) {
+                    log.error('[%s] Couldn\'t get lamp', AUTO, {
+                        stack: err.stack
+                    });
+                    return;
+                }
+                lamp.status = LAMP.DISCONNECTED;
+                lamp.save(function (err) {
+                    if (err) {
+                        return;
+                    }
+                    if (clusterListeners.hasOwnProperty(lamp.cid)) {
+                        clusterListeners[lamp.cid].forEach(function (client) {
+                            if (client.type === WEBCLIENT) {
+                                safeSend(client, JSON.stringify(makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: lamp.miniJsonify()
+                                })), postSendCallBack);
+                            }
+                        });
+                    }
+                })
+            });
             break;
         case 'termLampConnection':
-            log.warn('Detected terminal lamp re-connection');
+            log.warn('Terminal lamp connected');
             rerouteMap[client.cid] = undefined;
+            Lamp.findOne({
+                cid: client.cid,
+                lid: 1
+            }, function (err, lamp) {
+                if (err) {
+                    log.error('[%s] Couldn\'t get lamp', AUTO, {
+                        stack: err.stack
+                    });
+                    return;
+                }
+                lamp.status = LAMP.CONNECTED_NOSTATUS;
+                lamp.save(function (err) {
+                    if (err) {
+                        return;
+                    }
+                    if (clusterListeners.hasOwnProperty(lamp.cid)) {
+                        clusterListeners[lamp.cid].forEach(function (client) {
+                            if (client.type === WEBCLIENT) {
+                                safeSend(client, JSON.stringify(makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: lamp.miniJsonify()
+                                })), postSendCallBack);
+                            }
+                        });
+                    }
+                })
+            });
             break;
         }
         break;
     case 'ping':
         log.debug('[%s] Latency (%dms)', client.username, moment().valueOf() - pingTimer);
         break;
-    case 'requestStatus':
+    case 'reroutedquestStatus':
         if (client.type !== WEBCLIENT || msg.data.cid === undefined) return;
         log.info('[%s] Req term%d status', client.username, msg.data.cid);
         QaddFront(clusterIds[msg.data.cid - 1]);
@@ -1424,6 +1693,83 @@ function respond(msg, client) {
             break;
         }
         break;
+    case 'stat':
+        switch (msg.data.query) {
+        case 'lampStatus':
+            var lampStatusResponse = {};
+            Lamp.aggregate([{
+                '$group': {
+                    '_id': '$status',
+                    'count': {
+                        '$sum': 1
+                    }
+                }
+            }], function (err, results) {
+                if (err) return;
+                let newResults = {};
+                for (let i = 0; i < results.length; ++i) newResults[results[i]._id] = results[i].count;
+                results = newResults;
+                let fields = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
+                for (let i = 0; i < fields.length; ++i) {
+                    let key = fields[i];
+                    lampStatusResponse[key] = results[LAMP[key]] === undefined ? 0 : results[LAMP[key]];
+                }
+                Lamp.aggregate([{
+                    '$match': {
+                        status: LAMP.FINE
+                    }
+                }, {
+                    '$group': {
+                        '_id': '$bri',
+                        'count': {
+                            '$sum': 1
+                        }
+                    }
+                }], function (err, results) {
+                    if (err) return;
+                    let newResults = {};
+                    for (let i = 0; i < results.length; ++i) newResults[results[i]._id] = results[i].count;
+                    results = newResults;
+                    let fields = ['0', '1', '2', '3'];
+                    for (let i = 0; i < fields.length; ++i) {
+                        let key = fields[i];
+                        lampStatusResponse['bri' + key] = results[key] === undefined ? 0 : results[key];
+                    }
+                    safeSend(client, makeStringMsg('stat', {
+                        type: 'lampStatus',
+                        data: lampStatusResponse,
+                        powerConstants: powerConstants
+                    }));
+                });
+            });
+            break;
+        case 'termStatus':
+            var termStatusResponse = {};
+            Terminal.aggregate([{
+                '$group': {
+                    '_id': '$status',
+                    'count': {
+                        '$sum': 1
+                    }
+                }
+            }], function (err, results) {
+                if (err) return;
+                let newResults = {};
+                for (let i = 0; i < results.length; ++i) newResults[results[i]._id] = results[i].count;
+                results = newResults;
+                let fields = ['ONLINESYNCED', 'ONLINE', 'FAULTY', 'OFFLINE', 'UNREG'];
+                for (let i = 0; i < fields.length; ++i) {
+                    let key = fields[i];
+                    termStatusResponse[key] = results[TERM[key]] === undefined ? 0 : results[TERM[key]];
+                }
+                safeSend(client, makeStringMsg('stat', {
+                    type: 'termStatus',
+                    data: termStatusResponse
+                }));
+            });
+            break;
+        }
+        break;
     case 'modObj':
         if (!sConfig.override && !client.admin) {
             log.warn('[%s] Attempt to modObj without prev', client.username)
@@ -1583,6 +1929,20 @@ function parseByteStream(byteStream) {
             }
         };
         break;
+        // PowerData
+    case '11000':
+        jmsg.type = 'powerData';
+        jmsg.data = {
+            value: parseInt(bitStream.substr(18, 11), 2)
+        };
+        break;
+        // PollutionData
+    case '11100':
+        jmsg.type = 'pollutionData';
+        jmsg.data = {
+            value: parseInt(bitStream.substr(18), 2)
+        };
+        break;
     case '10011':
         jmsg.type = 'status';
         jmsg.data = {
@@ -1602,31 +1962,61 @@ function parseByteStream(byteStream) {
     return jmsg;
 }
 //-------------------------------------------------------------------------------------
-schedule.scheduleJob({
-    hour: 1,
-    minute: 0,
-    second: 0
-}, function () {
-    LampConfig.findOne({
-        name: 'midnyt'
-    }).populate('terminals.lamps.lamp').exec(function (err, config) {
-        if (err) {
-            log.error('[%s] Couldn\'t find config %s', AUTO, config.name, {
-                stack: err.stack
-            })
-            return
-        }
-        log.info('[%s] loaded config %s', AUTO, config.name);
-        loadConfig(config, AUTO)
-    })
-})
+// nodeScheduler.scheduleJob({
+//     hour: 1,
+//     minute: 0,
+//     second: 0
+// }, function () {
+//     LampConfig.findOne({
+//         name: 'midnyt'
+//     }).populate('terminals.lamps.lamp').exec(function (err, config) {
+//         if (err) {
+//             log.error('[%s] Couldn\'t find config %s', AUTO, config.name, {
+//                 stack: err.stack
+//             })
+//             return
+//         }
+//         log.info('[%s] loaded config %s', AUTO, config.name);
+//         loadConfig(config, AUTO)
+//     })
+// })
+// var powerMonitorTime = {
+//     hour: '*',
+//     minute: '*',
+//     second: '*/30'
+// }
+function askPower() {
+    for (var cid in terminalClients) {
+        Lamp.findOne({
+            cid: cid,
+            lid: 1
+        }, ['iid'], function (err, lamp) {
+            if (err || lamp === undefined || lamp.iid === undefined) return;
+            let msg = makeJsonMsg('powerData', {
+                lamp: {
+                    iid: lamp.iid
+                }
+            });
+            safeSendTerm(cid, msg);
+            msg = makeJsonMsg('pollutionData', {
+                lamp: {
+                    iid: lamp.iid
+                }
+            });
+            safeSendTerm(cid, msg);
+        });
+    };
+    log.info('[%s] Asked power data', AUTO);
+}
+setInterval(askPower, 5000);
+// nodeScheduler.scheduleJob(`${powerMonitorTime.second} ${powerMonitorTime.minute} ${powerMonitorTime.hour} * * * *`, );
 var timeTime = {
     hour: '*',
     minute: '*/2',
     second: '0'
 }
 // `${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * 1,3,5 *`
-schedule.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * * *`, function () {
+nodeScheduler.scheduleJob(`${timeTime.second} ${timeTime.minute} ${timeTime.hour} * * * *`, function () {
     let msg = makeJsonMsg('sync', {
         hour: moment().get('hour'),
         minute: moment().get('minute')
@@ -1814,6 +2204,7 @@ function askStatusOfNextLamp() {
         _id: nextLampId
     }, function (err, lamp) {
         if (err) {
+            0
             log.error('[%s] Couldn\'t get lamp', AUTO, {
                 stack: err.stack
             });
@@ -1833,10 +2224,10 @@ function askStatusOfNextLamp() {
 var dayStartTime = '08:00:00',
     dayEndTime = '17:00:00',
     dayTime = dayStartTime < myTimeStamp().substr(-8, 8) && myTimeStamp().substr(-8, 8) < dayEndTime;
-schedule.scheduleJob(`08 00 00 * * * *`, function () {
+nodeScheduler.scheduleJob(`08 00 00 * * * *`, function () {
     dayTime = true;
 })
-schedule.scheduleJob(`17 00 00 * * * *`, function () {
+nodeScheduler.scheduleJob(`17 00 00 * * * *`, function () {
     dayTime = false;
 })
 
@@ -1925,7 +2316,7 @@ function updateTerminalStatus(cid, status) {
         }
     });
 }
-// Autoexes
+// Autoexe
 // registerUser({body:{username:'admin',password:'pass',rpassword:'pass'},user:{username:'AUTO'}, flash:function(msg){}},function(){})
 // respond({
 //     type: 'emergency',

@@ -1,0 +1,146 @@
+doctype html
+html
+    head
+        title='Stats'+(isAuth ? ' | '+user.username : '')
+        link(rel='stylesheet',href='/stylesheets/dash/stats.css')
+        meta(name='viewport', content='width=device-width, initial-scale=1')
+        link(rel='stylesheet', href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css')
+        script(src='/javascripts/jquery.js')
+        script(src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js')
+    body
+        script(src='/javascripts/dash/stats.js')
+        script.
+            var username = '#{user.username}' 
+            var navConVisible = false
+        div(id='content')
+            div(id='realContent')
+                .container
+                    #accordion.panel-group
+                        .panel.panel-default
+                            .panel-heading
+                                h4.panel-title
+                                    a(data-toggle='collapse', data-parent='#accordion', href='#collapse1') Lamp
+                            if lamp
+                                #collapse1.panel-collapse.collapse.in
+                                    .panel-body
+                                        form(method='POST' action='/dash/stats')
+                                            input(type='number' name='cid' placeholder='CID' required=true)
+                                            input(type='number' name='lid' placeholder='LID' required=true)
+                                            input(type='submit' name='submit' value='Get Lamp')
+                                        if lamp
+                                            br
+                                            br    
+                                            table
+                                                tr
+                                                    th Terminal 
+                                                    th Lamp ID
+                                                    th Internal ID
+                                                    th Lat 
+                                                    th Lng 
+                                                    th Bri 
+                                                    th Status 
+                                                tr
+                                                    td=lamp.cid 
+                                                    td=lamp.lid
+                                                    td=lamp.iid
+                                                    td=lamp.loc.lat 
+                                                    td=lamp.loc.lng
+                                                    td=lamp.bri
+                                                    td=lamp.status
+                                            br
+                                            if lamp.status == 0
+                                                pre Lamp is fine
+                                            if lamp.status == 1
+                                                pre
+                                                    | Lamp is faulty. Brightness in DB doesn't match with
+                                                    | brightness reported by lamp.
+                                                    | Error in circuitry. 
+                                            if lamp.status == 2
+                                                pre
+                                                    | Lamp is disconnected. 
+                                                    | Check NRF on lamp.
+                                            if lamp.status == 3
+                                                pre
+                                                    | Status of lamp is unknown. 
+                                                    | Please wait for next status check.
+                                            if lamp.status == 4
+                                                pre
+                                                    | Lamp connected to network but status is unknown. 
+                                                    | Please wait for next status check.
+                            if !lamp
+                                #collapse1.panel-collapse.collapse
+                                    .panel-body
+                                        form(method='POST' action='/dash/stats')
+                                            input(type='number' name='cid' placeholder='CID' required=true)
+                                            input(type='number' name='lid' placeholder='LID' required=true)
+                                            input(type='submit' name='submit' value='Get Lamp')
+                        .panel.panel-default
+                            .panel-heading
+                                h4.panel-title
+                                    a(data-toggle='collapse', data-parent='#accordion', href='#collapse2') Terminal
+                            if term
+                                #collapse2.panel-collapse.collapse.in
+                                    .panel-body
+                                        form(method='POST' action='/dash/stats')
+                                            input(type='number' name='cid' placeholder='CID' required=true)
+                                            input(type='submit' name='submit' value='Get Terminal')
+                                        br
+                                        br    
+                                        table
+                                            tr
+                                                th Terminal ID
+                                                th Internal ID
+                                                th Lat 
+                                                th Lng 
+                                                th Status 
+                                            tr
+                                                td=term.cid 
+                                                td=term.iid
+                                                td=term.loc.lat 
+                                                td=term.loc.lng
+                                                td=term.status
+                                        br
+                                        if term.status == 0
+                                            pre Terminal is online and fine.
+                                        if term.status == 1
+                                            pre
+                                                | Terminal is online but status is unknown.
+                                                | Please wait for next status check.
+                                        if term.status == 2
+                                            pre
+                                                | Terminal is online but has a laulty lamp. 
+                                                | Check lamps under this terminal's ID.
+                                        if term.status == 3
+                                            pre
+                                                | Terminal is offline.
+                                                | It is not connected to the server.
+                                        if term.status == 4
+                                            pre
+                                                | Terminal has not been registered.
+                                                | Please run registration script to register terminal.
+                            if !term        
+                                #collapse2.panel-collapse.collapse
+                                    .panel-body
+                                        form(method='POST' action='/dash/stats')
+                                            input(type='number' name='cid' placeholder='CID' required=true)
+                                            input(type='submit' name='submit' value='Get Terminal')
+                        .panel.panel-default
+                            .panel-heading
+                                h4.panel-title
+                                    a(data-toggle='collapse', data-parent='#accordion', href='#collapse3') Emergency
+                            #collapse3.panel-collapse.collapse
+                                .panel-body
+                                    | Lorem ipsum dolor sit amet, consectetur adipisicing elit,
+                                    | sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                    | quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+                        .panel.panel-default
+                            .panel-heading
+                                h4.panel-title
+                                    a(data-toggle='collapse', data-parent='#accordion', href='#collapse4') Pollution
+                            #collapse4.panel-collapse.collapse
+                                .panel-body
+                                    | Lorem ipsum dolor sit amet, consectetur adipisicing elit,
+                                    | sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                    | quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+        include leftNav

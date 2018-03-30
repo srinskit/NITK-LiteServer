@@ -33,8 +33,7 @@ body {
     color: green;
 }
 
-#uname,
-#pass {
+#uname, #pass {
     width: 100%;
     padding: 12px 20px;
     margin: 8px 0;
@@ -55,6 +54,7 @@ body {
     border-radius: 4px;
     cursor: pointer;
     font-size: 20px;
+    outline: None;
 }
 
 #loginButton:hover {

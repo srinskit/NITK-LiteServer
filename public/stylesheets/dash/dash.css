@@ -1,1 +1,6 @@
 @import url('leftNav.css');
+
+#charts {
+    float: right;
+    height: 100%;
+}

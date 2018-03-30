@@ -16,12 +16,7 @@ html
                 a(href='/report') Report a problem
                 a(href='http://www.nitk.ac.in/') NITK
                 a(href='/') Home
-        div(class='errorMsg')
-            if errorMsg.length > 0
-                h4 !{errorMsg}
-        div(class='successMsg')
-            if successMsg.length > 0
-                h4 !{successMsg}           
+
 
         div(class='loginWrapper')
             form(action='/login' method='post')
@@ -30,4 +25,9 @@ html
                 input(type='password',placeholder='Password',id='pass',name='password'  autocomplete='off')
                 br
                 button(type='submit',id='loginButton') Login
-            
+            div(class='errorMsg')
+                if errorMsg.length > 0
+                    h4 !{errorMsg}
+            div(class='successMsg')
+                if successMsg.length > 0
+                    h4 !{successMsg}           

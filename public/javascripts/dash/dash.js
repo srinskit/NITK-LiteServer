@@ -2,7 +2,85 @@ $(document).ready(function () {
     startWS()
     $(window).bind('beforeunload', removeListenersBeforeClose)
 })
-var wsoc
+google.charts.load('current', {
+    'packages': ['corechart']
+});
+google.charts.setOnLoadCallback(drawChart);
+var chartAPIinit = false,
+    auth = false;
+
+function drawLampChart(stats) {
+    if (chartAPIinit == false) return;
+    let arrData = [
+        ['Status of lamp', 'Number of lamps']
+    ];
+    for (let key in stats) arrData.push([key, stats[key]]);
+    var data = google.visualization.arrayToDataTable(arrData);
+    var options = {
+        // title: 'Lamp status',
+        legend: 'left',
+        height: 400,
+        width: 500,
+        is3D: true
+    };
+    var lampChart = new google.visualization.PieChart(document.getElementById('lampStatusChart'));
+    lampChart.draw(data, options);
+}
+
+function drawTermChart(stats) {
+    if (chartAPIinit == false) return;
+    let arrData = [
+        ['Status of term', 'Number of terms']
+    ];
+    for (let key in stats) arrData.push([key, stats[key]]);
+    var terminalStatus = new google.visualization.PieChart(document.getElementById('terminalStatusChart'));
+    terminalStatus.draw(google.visualization.arrayToDataTable(arrData), {
+        legend: 'left',
+        height: 400,
+        width: 500,
+        is3D: true
+    });
+}
+var powerArrData = [
+    ['Power', 'Time']
+];
+var powerCount = 0;
+
+function drawPowerChart(stats, powerConstants) {
+    if (chartAPIinit == false) return;
+    powerCount++;
+    let power = 0;
+    power += powerConstants[0] * stats['bri0'];
+    power += powerConstants[1] * stats['bri1'];
+    power += powerConstants[2] * stats['bri2'];
+    power += powerConstants[3] * stats['bri3'];
+    let foo = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
+    for (let key in foo) power += powerConstants[1] * stats[foo[key]];
+    powerArrData.push([powerCount, power]);
+    var powerChart = new google.visualization.LineChart(document.getElementById('powerDataChart'));
+    powerChart.draw(google.visualization.arrayToDataTable(powerArrData), {
+        curveType: 'line',
+        height: 400,
+        width: 1200,
+        legend: {
+            position: 'bottom'
+        }
+    });
+}
+
+function drawChart() {
+    console.log('chartInit');
+    chartAPIinit = true;
+    if (auth === true) {
+        wsoc.send(makeMsg('stat', {
+            query: 'lampStatus'
+        }));
+        wsoc.send(makeMsg('stat', {
+            query: 'termStatus'
+        }));
+    }
+}
+var wsoc;
 startWS = function () {
     var loc = window.location,
         new_uri,
@@ -56,27 +134,55 @@ function readCookie(name) {
 function eraseCookie(name) {
     createCookie(name, "", -1);
 }
-
 process = function (data) {
-    console.log(data.data)
+    // console.log(data)
     switch (data.type) {
-        case 'auth':
-            if (data.data.state === 'pass') {
-                wsoc.send(makeMsg('addListener', {
-                    loc: 'serverConfig'
-                }))
-            } else {
-                alert('Auth error! Try logging in again')
+    case 'auth':
+        if (data.data.state === 'pass') {
+            auth = true;
+            wsoc.send(makeMsg('addListener', {
+                loc: 'serverConfig'
+            }));
+            if (chartAPIinit) {
+                wsoc.send(makeMsg('stat', {
+                    query: 'lampStatus'
+                }));
+                wsoc.send(makeMsg('stat', {
+                    query: 'termStatus'
+                }));
             }
-            break
-        case 'serverConfig':
-            if (data.data.override == true) {
-                $('.onOverride').show()
-            } else {
-                $('.onOverride').hide()
-            }
+        } else {
+            alert('Auth error! Try logging in again')
+        }
+        break;
+    case 'stat':
+        switch (data.data.type) {
+        case 'lampStatus':
+            drawLampChart(data.data.data);
+            drawPowerChart(data.data.data, data.data.powerConstants);
+            break;
+        case 'termStatus':
+            drawTermChart(data.data.data);
+            break;
+        }
+        break;
+    case 'serverConfig':
+        if (data.data.override == true) {
+            $('.onOverride').show()
+        } else {
+            $('.onOverride').hide()
+        }
+        break;
     }
 }
+setInterval(function () {
+    wsoc.send(makeMsg('stat', {
+        query: 'lampStatus'
+    }));
+    wsoc.send(makeMsg('stat', {
+        query: 'termStatus'
+    }));
+}, 3000);
 removeListenersBeforeClose = function () {
     wsoc.send(makeMsg('removeListener', {
         'loc': 'serverConfig'

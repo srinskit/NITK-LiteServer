@@ -24,7 +24,12 @@ var termSchema = mongoose.Schema({
     token: String,
     ip: String,
     enabled: Boolean,
-    online: Boolean
+    online: Boolean,
+    emergencyStat: {
+        POLICE: Number,
+        AMBULANCE: Number,
+        FIRE: Number
+    }
 });
 termSchema.virtual('ONLINESYNCED').get(() => {
     return 0;
@@ -51,6 +56,9 @@ termSchema.methods.initialiseAndCheck = function () {
     this.enabled = false;
     this.ip = 'UNREG';
     this.username = 'UNREG';
+    this.emergencyStat.POLICE = 0;
+    this.emergencyStat.FIRE = 0;
+    this.emergencyStat.AMBULANCE = 0;
     if (!this.iid || !this.cid || !this.loc.lat || !this.loc.lng) return false;
     return isInt(this.iid) && isInt(this.cid);
 };

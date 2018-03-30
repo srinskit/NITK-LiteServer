@@ -1,19 +1,19 @@
 doctype html
 html
-  head
-    title Map (#{user.username})
-    link(rel='stylesheet',href='/stylesheets/dash/map.css')
-  body
-    script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
-    script(src='/javascripts/dash/map.js')
-    div(id='content')
-        div(id='realContent')
-            div(id='map')
-    script.
-        var user = {}
-        user.username = '#{user.username}' 
-        user.admin = ('#{user.admin}' === 'true') 
-        var server ={}
-        server.override = ('#{server.override}'==='true')
-        var navConVisible = false
-    include leftNav
+    head
+        title='Map'+(isAuth ? ' | '+user.username : '')
+        link(rel='stylesheet',href='/stylesheets/dash/map.css')
+    body
+        script(src='/javascripts/jquery.js')
+        script(src='/javascripts/dash/map.js')
+        div(id='content')
+            div(id='realContent')
+                div(id='map')
+        script.
+            var user = {}
+            user.username = '#{user.username}' 
+            user.admin = ('#{user.admin}' === 'true') 
+            var server ={}
+            server.override = ('#{server.override}'==='true')
+            var navConVisible = false
+        include leftNav

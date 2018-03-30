@@ -3,6 +3,8 @@ div(id='nav')
         h4(id='navTitle') Goto
         ul(id='navUl')
             li
+                a(class='navA' href='/') Home       
+            li
                 a(class='navA' href='/dash') Dash
             li
                 a(class='navA'  href='/dash/map') Map
@@ -12,12 +14,18 @@ div(id='nav')
                 li
                     a(class='navA'  href='/dash/load') Load
                 li
+                    a(class='navA'  href='/upload') Advt
+                li 
+                    a(class='navA' href ='/dash/stats') Stats
+                li
                     a(class='navA' href ='/dash/logs') Logs
                 li 
                     a(class='navA' href ='/dash/report') Report
             if user.admin === false
                 li
                     a(class='navA onOverride' href='/dash/load' style='display:none;') Load 
+                li 
+                    a(class='navA' href ='/dash/report') Report
             li 
                 a(class='navA'  href='/logout') Logout
     button(id='navToggler')

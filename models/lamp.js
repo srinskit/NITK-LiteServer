@@ -59,6 +59,9 @@ lampSchema.virtual('DISCONNECTED').get(() => {
 lampSchema.virtual('UNKNOWN').get(() => {
     return 3;
 });
+lampSchema.virtual('CONNECTED_NOSTATUS').get(() => {
+    return 4;
+});
 
 function isInt(n) {
     return Number(n) === n && n % 1 === 0;

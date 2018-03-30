@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title></title>
+    <link rel="stylesheet" href="/stylesheets/my_css.css">
+    <script src="/javascripts/my_js.js"></script>
+    <script src="/javascripts/axios.js"></script>
+</head>
+<body class="w3-container">
+
+    <div id="gallery">
+        <h1 class="w3-center" id="gallery" >Ad Gallery</h1>
+        <div class="w3-panel w3-black"  style="overflow:auto; max-height:400px;">
+            <div class="w3-row" v-for="image in imgList" v-if="image%4==0" style="position: relative; height:30vh;">
+                <div class="w3-col l3 m6 s12 w3-panel w3-display-container" style="height:100%; min-height:190px;">
+                    <img :src="url + image +'.png?'+rand" class="w3-padding w3-image w3-display-middle w3-hover-opacity" alt="" style="width:100%; height:100%;" @click="showModal(image)" >
+                    <button class="w3-button w3-display-middle w3-display-hover w3-white" @click="del(image)">Delete</button>
+                </div>
+                <div class="w3-col l3 m6 s12 w3-panel w3-display-container" style="height:100%; min-height:190px;" v-if="image+1<imgList.length">
+                    <img :src="url + (image+1) +'.png?'+rand" class="w3-padding w3-image w3-display-middle w3-hover-opacity" alt="" style="width:100%; height:100%;" @click="showModal(image+1)">
+                    <button class="w3-button w3-display-middle w3-display-hover w3-white" @click="del(image+1)">Delete</button>
+                </div>
+                <div class="w3-col l3 m6 s12 w3-panel w3-display-container" style="height:100%; min-height:190px;" v-if="image+2<imgList.length">
+                    <img :src="url + (image+2) +'.png?'+rand" class="w3-padding w3-image w3-display-middle w3-hover-opacity" alt="" style="width:100%; height:100%;" @click="showModal(image+2)">
+                    <button class="w3-button w3-display-middle w3-display-hover w3-white" @click="del(image+2)">Delete</button>
+                </div>
+                <div class="w3-col l3 m6 s12 w3-panel w3-display-container" style="height:100%; min-height:190px;" v-if="image+3<imgList.length">
+                    <img :src="url + (image+3) +'.png?'+rand" class="w3-padding w3-image w3-display-middle w3-hover-opacity" alt="" style="width:100%; height:100%;" @click="showModal(image+3)">
+                    <button class="w3-button w3-display-middle w3-display-hover w3-white" @click="del(image+3)">Delete</button>
+                </div>
+            </div>
+
+            <div class="w3-modal w3-show" v-if="false">
+                <div class="w3-modal-content w3-white">
+                    <span class="w3-button w3-hover-white w3-display-topright" @click="show=false">&times;</span>
+                    <div class="w3-container" style="width:100%;padding:0px!important;margin:0px!important;">
+                        <img :src="url + img +'.png'" alt="" class="w3-image" style="width:100%;height:auto;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div :class="{'w3-container': true, 'w3-bar-item': true, 'w3-button': true, 'w3-border-bottom': true, 'w3-black': pf, 'w3-padding-32': !pf}" @click="showPf" style="width:100%">Upload Image</div>
+            <div class="w3-container w3-padding-32" v-if="pf">
+                <form @submit.prevent="onSubmit">
+                    <div v-if="!image">
+                        <label style="cursor:pointer" for="file">Select an image</label>
+                        <input type="file" ref="file" @change="onFileChange" id="file" style="display:none">
+                    </div>
+                    <div v-else class="w3-center">
+                        <img :src="image" class="w3-margin" style="width:500px; height:240px;"/><br/>
+                        <button @click="removeImage" class="w3-button">Remove image</button><br/>
+                        <button @click = "upload" class="w3-button">Upload</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+
+        var URL =  'http://localhost:80/';
+
+        var HTTP = axios.create({
+            baseURL: URL,
+        })
+
+        new Vue({
+            el : '#gallery',
+            data: {
+                imgList : [],
+                show: false,
+                url:'http://localhost:80/upload/img',
+                img : '',
+                pf:false,
+                image: '',
+                File :'',
+                rand: 0
+            },
+            methods:{
+                showModal(i){
+                    this.show = true;
+                    this.img = i;
+                },
+                onFileChange(e) {
+                    var files = e.target.files || e.dataTransfer.files;
+                    if (!files.length)
+                        return;
+                    this.File = files[0];
+                    this.createImage(files[0]);
+                },
+                createImage(file) {
+                    var image = new Image();
+                    var reader = new FileReader();
+                    var vm = this;
+
+                    reader.onload = (e) => {
+                        vm.image = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                    },
+                    removeImage: function (e) {
+                    this.image = '';
+                },
+                showPf(){
+                    this.pf = !this.pf;
+                },
+                upload(){
+                    var formData = new FormData();
+                    formData.append('imageFile', this.File);
+                    HTTP.post('/upload',
+                        formData
+                    )
+                    .then((res)=>{
+                        this.checkLength();
+                    })
+                },
+                onSubmit(){
+                    this.pf = false;
+                    this.image='';
+                    this.File ='';
+                },
+                checkLength(){
+                    var app = this;
+                    HTTP.get('/upload/imgNo')
+                    .then(res=>{
+                        app.imgList = [];
+                        for(var i=0; i<res.data.length; i++){
+                            app.imgList.push(i);
+                        }
+                    })
+                },
+                del(i){
+                    var app = this;
+
+                    console.log('img'+i+'.png');
+                    HTTP.post('/upload/delete',{
+                        img : 'img'+i+'.png'
+                    })
+                    .then(res=>{
+                        app.imgList.splice(i,1);
+                        console.log(res.data);
+                        app.rand = Math.random()*(100000000);
+                        this.checkLength();
+                    })
+                    .catch(err=>{
+                        console.log(err);
+                    })
+                }
+            },
+            created(){
+                this.checkLength();
+            }
+        })
+
+    </script>
+</body>
+
+</html>

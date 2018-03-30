@@ -1,12 +1,24 @@
 doctype html
 html
     head
-        title Dash (#{user.username})
+        title='Dash'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet' href='/stylesheets/dash/dash.css')
     body
-        script(src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js')
+        script(src='/javascripts/jquery.js')
+        script(src='https://www.gstatic.com/charts/loader.js')
         script(src='/javascripts/dash/dash.js')
         div(id='content')
+            div#charts
+                table
+                    tr
+                        td
+                        td
+                            div#lampStatusChart
+                    tr
+                        td 
+                            div#powerDataChart
+                        td
+                            div#terminalStatusChart
         script.
             var navConVisible = true
         include leftNav
