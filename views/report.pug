@@ -3,55 +3,63 @@ html
     head
         title='Report'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet',href='/stylesheets/report.css')
+        link(rel='stylesheet',href='/stylesheets/about.css')
+        link(rel='stylesheet',href='/stylesheets/propraj.css')
+        link(rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css")
+        meta(name="viewport",content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
     body
+        
         include topNav
-        div(class="card" style="margin-top:10vh;")
-            h3(class="marginalize") Report faulty lamps
-            form(class="container" method="GET" action="/")
-                label(class="marginalize") Cluster ID, The number on label of terminal
-                br
-                input(name="cid" placeholder="Cluster ID" class="marginalize")
-                br
-                label(class="marginalize") Lamp ID, The number on label of terminal
-                br
-                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
-                br
-                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
-                br
-                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
-                br
-                input(type="submit" value="Report" class="marginalize")
 
-        div(class="card" )
-            h3(class="marginalize") Report Employee
-            form(class="container" method="GET" action="/")
-                label(class="marginalize") Cluster ID, The number on label of terminal
-                br
-                input(name="cid" placeholder="Cluster ID" class="marginalize")
-                br
-                label(class="marginalize") Lamp ID, The number on label of terminal
-                br
-                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
-                br
-                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
-                br
-                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
-                br
-                input(type="submit" value="Report" class="marginalize")
+        div(class="w3-display-container w3-panel")
+            div(class="w3-container w3-display-topmiddle  w3-col l8 m10 s12" )
+                div(class="w3-card w3-light-gray w3-center", style="margin-top:10px;")
+                    h3(class="w3-center w3-xlarge",style="font-family:Arial Nova") Report faulty lamps
+                    form(class="w3-container" method="GET" action="/")
+                        label(class="w3-medium", style="margin-top:5px; display:block") Cluster ID, The number on label of terminal
+                        br
+                        input(name="cid" placeholder="Cluster ID" class="w3-input")
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Lamp ID, The number on label of terminal
+                        br
+                        input(name="lids" placeholder="Lamp IDs of faulty lamps" class="w3-input" required)
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Describe the problem, location of lamps, landmarks nearby etc  
+                        br
+                        textarea(name="desc" placeholder="Description" rows="3" style="width:100%; margin-top:5px;")
+                        br
+                        input(type="submit" value="Report" class="w3-button w3-black w3-margin" style="padding:5px!important")
 
-        div(class="card" id="emp")
-            h3(class="marginalize" ) Feedback and suggestions
-            form(class="container" method="GET" action="/")
-                label(class="marginalize") Cluster ID, The number on label of terminal
-                br
-                input(name="cid" placeholder="Cluster ID" class="marginalize")
-                br
-                label(class="marginalize") Lamp ID, The number on label of terminal
-                br
-                input(name="lids" placeholder="Lamp IDs of faulty lamps" class="marginalize" required)
-                br
-                label(class="marginalize") Describe the problem, location of lamps, landmarks nearby etc  
-                br
-                textarea(name="desc" placeholder="Description" cols="50" rows="4" class="marginalize")
-                br
-                input(type="submit" value="Report" class="marginalize")
+                div(class="w3-card w3-light-gray w3-center", style="margin-top:10px;")
+                    h3(class="w3-center w3-xlarge",style="font-family:Arial Nova") Report Employee
+                    form(class="w3-container" method="GET" action="/")
+                        label(class="w3-medium", style="margin-top:5px; display:block") Cluster ID, The number on label of terminal
+                        br
+                        input(name="cid" placeholder="Cluster ID" class="w3-input")
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Lamp ID, The number on label of terminal
+                        br
+                        input(name="lids" placeholder="Lamp IDs of faulty lamps" class="w3-input" required)
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Describe the problem, location of lamps, landmarks nearby etc  
+                        br
+                        textarea(name="desc" placeholder="Description" rows="3" style="width:100%; margin-top:5px;")
+                        br
+                        input(type="submit" value="Report" class="w3-button w3-black w3-margin" style="padding:5px!important")
+
+                div(class="w3-card w3-light-gray w3-center", style="margin-top:10px;" id="emp")
+                    h3(class="w3-center w3-xlarge",style="font-family:Arial Nova" ) Feedback and suggestions
+                    form(class="w3-container" method="GET" action="/")
+                        label(class="w3-medium", style="margin-top:5px; display:block") Cluster ID, The number on label of terminal
+                        br
+                        input(name="cid" placeholder="Cluster ID" class="w3-input")
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Lamp ID, The number on label of terminal
+                        br
+                        input(name="lids" placeholder="Lamp IDs of faulty lamps" class="w3-input" required)
+                        br
+                        label(class="w3-medium", style="margin-top:5px; display:block") Describe the problem, location of lamps, landmarks nearby etc  
+                        br
+                        textarea(name="desc" placeholder="Description" rows="3" style="width:100%; margin-top:5px;")
+                        br
+                        input(type="submit" value="Report" class="w3-button w3-black w3-margin" style="padding:5px!important")

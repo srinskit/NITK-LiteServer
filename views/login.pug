@@ -3,31 +3,65 @@ html
     head
         title Login
         link(rel='stylesheet',href='/stylesheets/login.css')
+        link(rel='stylesheet',href='/stylesheets/propraj.css')
+        link(rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css")
+        meta(name="viewport",content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
+    
     body
-        div(id='navDiv')    
-            div(id='navDivLeft') 
-                p(id='navTitle') NITK LITE
-            div(id='navDivRight')    
-                a(href='/about') About
+        script(src="/javascripts/my_js.js")
+
+        div(class="w3-hide-small w3-hide-medium w3-panel",style="color:white")    
+            div(class="w3-left") 
+                p(class="w3-container w3-xlarge") NITK LITE
+            div(class='w3-bar-item w3-right w3-padding',style="margin:auto;")    
+                a(href='/about',class="w3-bar-item w3-button") About
                 if isAuth
-                    a(href='/logout') Logout
+                    a(href='/dash',class="w3-bar-item w3-button") Dash
                 else
-                    a(href='/login') Login
-                a(href='/report') Report a problem
-                a(href='http://www.nitk.ac.in/') NITK
-                a(href='/') Home
+                    a(href='/login',class="w3-bar-item w3-button") Login
+                a(href='/report',class="w3-bar-item w3-button") Report Problem
+                a(href='http://www.nitk.ac.in/',class="w3-bar-item w3-button") NITK
+                a(href='/',class="w3-bar-item",class="w3-bar-item w3-button") Home
 
 
-        div(class='loginWrapper')
+        div(class="w3-hide-large w3-panel", id="V", style="width:100%;height:100%")    
+            h1(class='w3-center',style="color:white") NITK LITE
+                
+            span(style="position:absolute;left:0px;top:2px;margin-left:5px;color:white")
+                i(class="fa fa-bars w3-large w3-button",aria-hidden="true",@click="show=true")   
+
+            div(class="w3-modal w3-show w3-display-container", v-if="show")
+                div(class="w3-modal-content w3-white w3-display-middle")
+                    div(class="w3-panel")
+                        span(class="w3-button w3-display-topright",@click="show=false") &times    
+                    div(class="w3-container w3-bar-block w3-center",style="width:60vw")
+                        a(href='/about',class="w3-bar-item w3-button") About
+                        if isAuth
+                            a(href='/dash',class="w3-bar-item w3-button") Dash
+                        else
+                            a(href='/login',class="w3-bar-item w3-button") Login
+                        a(href='/report',class="w3-bar-item w3-button") Report Problem
+                        a(href='http://www.nitk.ac.in/',class="w3-bar-item w3-button") NITK
+                        a(href='/',class="w3-bar-item",class="w3-bar-item w3-button") Home
+
+        script.
+            new Vue({
+                el:'#V',
+                data:{
+                    show:false
+                }
+            })
+
+        div(class='w3-panel w3-center',style="margin-top:10vh;")
             form(action='/login' method='post')
-                input(type='text',placeholder='Username',id='uname',name='username' autocomplete='off' autofocus)
+                input(type='text',placeholder='Username',id='uname',name='username' autocomplete='off' autofocus,style="width:60vw;max-width:300px")
                 br
-                input(type='password',placeholder='Password',id='pass',name='password'  autocomplete='off')
+                input(type='password',placeholder='Password',id='pass',name='password'  autocomplete='off',style="width:60vw;max-width:300px")
                 br
-                button(type='submit',id='loginButton') Login
+                button(type='submit',id='loginButton',style="width:60vw;max-width:300px") Login
             div(class='errorMsg')
                 if errorMsg.length > 0
-                    h4 !{errorMsg}
+                    h4(class=" w3-red w3-large") !{errorMsg}
             div(class='successMsg')
                 if successMsg.length > 0
-                    h4 !{successMsg}           
+                    h4(class=" w3-red w3-large") !{successMsg}            
