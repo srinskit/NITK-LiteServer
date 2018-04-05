@@ -39,7 +39,7 @@ var powerConstants = {
     0: 0,
     1: 5,
     2: 10,
-    3: 15
+    3: 19
 };
 // For India
 var timeZone = 'Asia/Kolkata';
@@ -182,7 +182,7 @@ var app = express();
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
 app.use(favicon(path.join(__dirname, 'public', 'images', 'favicon.ico')));
-app.use(morgan('dev'))
+// app.use(morgan('dev'))
 app.use(bodyParser.urlencoded({
     extended: true
 }));
@@ -1413,6 +1413,13 @@ function respond(msg, client) {
                         html: `Send <strong>${msg.data.service}</strong> to terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}). \
                              ${victim.name} Aadhar# ${msg.data.id} needs help! Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
                     };
+                    if (msg.data.service === 'FIRE') mailOptions = {
+                        from: '"MAINTAINANCE" <itguylab@gmail.com>',
+                        to: 'srinagrao2007@gmail.com',
+                        subject: `Aadhar# ${msg.data.id} is servicing terminal`,
+                        html: `Terminal ${client.cid} (${terminal.loc.lat},${terminal.loc.lng}) is being serviced by \
+                             ${victim.name} Aadhar# ${msg.data.id}. Click <a href='https://www.google.com/maps/dir/?api=1&destination=${terminal.loc.lat},${terminal.loc.lng}&travelmode=driving'>here</a> for directions.`
+                    };
                     mailTrans.sendMail(mailOptions, function (error, info) {
                         if (error) {
                             return console.log(error);
@@ -1420,7 +1427,7 @@ function respond(msg, client) {
                         console.log('Message sent: ' + info.response);
                     });
                 });
-                log.info('[%s] %s service requested', client.username, msg.data.service);
+                log.info('[%s] %s service requested', client.username, msg.data.service === 'FIRE' ? 'MAINTAINANCE' : msg.data.service);
             }
         });
         break;
@@ -1431,20 +1438,64 @@ function respond(msg, client) {
             onRecievingLampStatus(msg.data[LAMPOBJ]);
             break;
         case 'powerData':
-            Lamp.findOne({
-                cid: client.cid,
-                lid: 1
-            }, ['bri'], function (err, lamp) {
-                if (err) return;
-                powerConstants[lamp.bri] = msg.data.value;
-            });
             let x = new PowerLog({
                 cid: client.cid,
                 value: msg.data.value,
                 time: myTimeStamp()
             });
             x.save(function (err) {});
-            log.info('[%s] powerData= %d', client.username, msg.data.value);
+            Lamp.aggregate([{
+                '$group': {
+                    '_id': '$status',
+                    'count': {
+                        '$sum': 1
+                    }
+                }
+            }], function (err, results) {
+                if (err) return;
+                let lampStatusResponse = {};
+                let newResults = {};
+                for (let i = 0; i < results.length; ++i) newResults[results[i]._id] = results[i].count;
+                results = newResults;
+                let fields = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
+                for (let i = 0; i < fields.length; ++i) {
+                    let key = fields[i];
+                    lampStatusResponse[key] = results[LAMP[key]] === undefined ? 0 : results[LAMP[key]];
+                }
+                Lamp.aggregate([{
+                    '$match': {
+                        status: LAMP.FINE
+                    }
+                }, {
+                    '$group': {
+                        '_id': '$bri',
+                        'count': {
+                            '$sum': 1
+                        }
+                    }
+                }], function (err, results) {
+                    if (err) return;
+                    let newResults = {};
+                    for (let i = 0; i < results.length; ++i) newResults[results[i]._id] = results[i].count;
+                    results = newResults;
+                    let fields = ['0', '1', '2', '3'];
+                    for (let i = 0; i < fields.length; ++i) {
+                        let key = fields[i];
+                        lampStatusResponse['bri' + key] = results[key] === undefined ? 0 : results[key];
+                    }
+                    let power = 0;
+                    power += powerConstants[0] * lampStatusResponse['bri0'];
+                    power += powerConstants[1] * lampStatusResponse['bri1'];
+                    power += powerConstants[2] * lampStatusResponse['bri2'];
+                    power += powerConstants[3] * lampStatusResponse['bri3'];
+                    let foo = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
+                    for (let key in foo) power += powerConstants[1] * lampStatusResponse[foo[key]];
+                    log.info('[%s] powerData= %d, estimated= %d', client.username, msg.data.value, power);
+                    if (msg.data.value >= 65) {
+                        log.warn('[%s] Power theft detected', client.username);
+                    }
+                });
+            });
             break;
         case 'pollutionData':
             let y = new PollutionLog({
@@ -1456,7 +1507,7 @@ function respond(msg, client) {
             log.info('[%s] pollutionData= %d', client.username, msg.data.value);
             break;
         case 'termLampDisconnection':
-            log.warn('Terminal lamp not connected');
+            log.warn('[%s] Terminal lamp not connected', client.username);
             rerouteMap[client.cid] = client.fcid;
             Lamp.findOne({
                 cid: client.cid,
@@ -1486,7 +1537,7 @@ function respond(msg, client) {
             });
             break;
         case 'termLampConnection':
-            log.warn('Terminal lamp connected');
+            log.warn('[%s] Terminal lamp connected', client.username);
             rerouteMap[client.cid] = undefined;
             Lamp.findOne({
                 cid: client.cid,
@@ -1712,11 +1763,22 @@ function respond(msg, client) {
         case 'pollStatus':
             PollutionLog.find({
                 cid: 2
-            }).sort('-date').limit(10).exec(function (err, pollLogs) {
+            }).sort('-date').limit(15).exec(function (err, pollLogs) {
                 if (err) return;
                 safeSend(client, makeStringMsg('stat', {
                     type: 'pollStatus',
                     data: pollLogs.map(obj => obj.value)
+                }));
+            });
+            break;
+        case 'powerStatus':
+            PowerLog.find({
+                cid: 1
+            }).sort('-date').limit(15).exec(function (err, powerLogs) {
+                if (err) return;
+                safeSend(client, makeStringMsg('stat', {
+                    type: 'powerStatus',
+                    data: powerLogs.map(obj => obj.value)
                 }));
             });
             break;
@@ -1949,7 +2011,7 @@ function parseByteStream(byteStream) {
             type: LAMPOBJ,
             [LAMPOBJ]: {
                 iid: parseInt(bitStream.substr(5, 10), 2),
-                on: bitStream.substr(15, 1) === '0' ? false : true,
+                ambLight: bitStream.substr(15, 1) === '0' ? 0 : 1,
                 bri: parseInt(bitStream.substr(16, 2), 2)
             }
         };
@@ -2018,24 +2080,27 @@ function askPower() {
         }, ['iid'], function (cid) {
             return function (err, lamp) {
                 if (err || lamp === undefined || lamp.iid === undefined) return;
+                if (rerouteMap[cid] !== undefined) return;
                 let msg = makeJsonMsg('powerData', {
                     lamp: {
                         iid: lamp.iid
                     }
                 });
                 safeSendTerm(cid, msg);
-                msg = makeJsonMsg('pollutionData', {
-                    lamp: {
-                        iid: lamp.iid
-                    }
-                });
-                safeSendTerm(cid, msg);
+                // if (cid == 2) {
+                //     msg = makeJsonMsg('pollutionData', {
+                //         lamp: {
+                //             iid: lamp.iid
+                //         }
+                //     });
+                //     safeSendTerm(cid, msg);
+                // }
             }
         }(cid));
     };
     log.info('[%s] Asked power data', AUTO);
 }
-setInterval(askPower, 30000);
+setInterval(askPower, 15000);
 // nodeScheduler.scheduleJob(`${powerMonitorTime.second} ${powerMonitorTime.minute} ${powerMonitorTime.hour} * * * *`, );
 var timeTime = {
     hour: '*',
@@ -2248,14 +2313,14 @@ function askStatusOfNextLamp() {
         }, sConfig.timeoutTimeForLampStatusCheck);
     });
 }
-var dayStartTime = '08:00:00',
-    dayEndTime = '17:00:00',
-    dayTime = dayStartTime < myTimeStamp().substr(-8, 8) && myTimeStamp().substr(-8, 8) < dayEndTime;
-nodeScheduler.scheduleJob(`08 00 00 * * * *`, function () {
-    dayTime = true;
+var bStartTime = '12:00:00',
+    bEndTime = '20:00:00',
+    bTime = bStartTime < myTimeStamp().substr(-8, 8) && myTimeStamp().substr(-8, 8) < bEndTime;
+nodeScheduler.scheduleJob(`12 00 00 * * * *`, function () {
+    bTime = true;
 })
-nodeScheduler.scheduleJob(`17 00 00 * * * *`, function () {
-    dayTime = false;
+nodeScheduler.scheduleJob(`20 00 00 * * * *`, function () {
+    bTime = false;
 })
 
 function onRecievingLampStatus(gotLamp) {
@@ -2272,10 +2337,10 @@ function onRecievingLampStatus(gotLamp) {
             });
             return;
         }
-        if (gotLamp.on === undefined) {
+        if (gotLamp.ambLight === undefined) {
             onLampTimeout(lamp);
             return;
-        } else if (gotLamp.bri != lamp.bri || dayTime && gotLamp.on && lamp.bri != 0) {
+        } else if (gotLamp.bri != lamp.bri) {
             log.debug('[AUTO] Got status(%d) of lamp %d,%d (%dms)', gotLamp.bri, lamp.cid, lamp.lid, latency);
             clusterFine = false;
             safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
@@ -2311,6 +2376,62 @@ function onRecievingLampStatus(gotLamp) {
                     }));
                 });
             }
+        }
+        if (lamp.lid === 1) {
+            Terminal.findOne({
+                cid: lamp.cid
+            }, ['ambLight', 'lamps'], function (err, term) {
+                if (err) return;
+                if (gotLamp.ambLight === 1 && bTime === true && term.ambLight === 0) {
+                    log.info('[%d] Setting to bri 1', lamp.cid);
+                    term.ambLight = 1;
+                    term.save();
+                    for (let i = 0; i < term.lamps.length; ++i) {
+                        Lamp.findOne({
+                            _id: term.lamps[i]
+                        }, function (err, lamp) {
+                            lamp.prevBri = lamp.bri;
+                            lamp.bri = 1;
+                            lamp.save(function (err) {
+                                if (err) return;
+                            });
+                        })
+                    }
+                    safeSendTerm(term.cid, makeJsonMsg(CLUSOBJ, {
+                        [CLUSOBJ]: {
+                            cid: term.cid,
+                            bri: 1
+                        }
+                    }));
+                    toClusterListeners(term.cid, makeJsonMsg(CLUSOBJ, {
+                        [CLUSOBJ]: {
+                            cid: term.cid,
+                            bri: 1
+                        }
+                    }));
+                }
+                if ((gotLamp.ambLight === 0 || bTime === false) && term.ambLight === 1) {
+                    log.info('[%d] Restoring', lamp.cid);
+                    term.ambLight = 0;
+                    term.save();
+                    for (let i = 0; i < term.lamps.length; ++i) {
+                        Lamp.findOne({
+                            _id: term.lamps[i]
+                        }, function (err, lamp) {
+                            lamp.bri = lamp.prevBri;
+                            lamp.save(function (err) {
+                                if (err) return;
+                                safeSendTerm(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: lamp.jsonify()
+                                }));
+                                toClusterListeners(lamp.cid, makeJsonMsg(LAMPOBJ, {
+                                    [LAMPOBJ]: lamp.jsonify()
+                                }));
+                            });
+                        })
+                    }
+                }
+            });
         }
         nextLampId = lamp.next;
         setTimeout(() => process.nextTick(askStatusOfNextLamp), sConfig.delayBetweenLampStatusChecks);

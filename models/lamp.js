@@ -6,6 +6,8 @@ var lampSchema = mongoose.Schema({
     lid: Number,
     cid: Number,
     bri: Number,
+    prevBri: Number,
+    Number,
     status: Number,
     loc: {
         lat: String,

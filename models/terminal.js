@@ -7,6 +7,7 @@ var termSchema = mongoose.Schema({
     cid: Number,
     fcid: Number,
     status: Number,
+    ambLight: Number,
     loc: {
         lat: String,
         lng: String
