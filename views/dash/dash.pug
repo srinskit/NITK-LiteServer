@@ -7,19 +7,18 @@ html
         script(src='/javascripts/jquery.js')
         script(src='https://www.gstatic.com/charts/loader.js')
         script(src='/javascripts/dash/dash.js')
-        div(id='content')
-            div#charts
-                table
-                    tr
-                        td 
-                            div#pollDataChart
-                        td
-                            div#lampStatusChart
-                    tr
-                        td 
-                            div#powerDataChart
-                        td
-                            div#terminalStatusChart
+        div(id='content', style="margin-top:25px")
+            div(id="charts")
+                div(class="w3-row")
+                    div(class="w3-col l8 m12 s12") 
+                        div#pollDataChart.w3-margin
+                    div(class="w3-col l4 m12 s12")         
+                        div#lampStatusChart.w3-margin
+                div(class="w3-row")
+                    div(class="w3-col l8 m12 s12") 
+                        div#powerDataChart.w3-margin
+                    div(class="w3-col l4 m12 s12") 
+                        div#terminalStatusChart.w3-margin
         script.
             var navConVisible = true
         include leftNav

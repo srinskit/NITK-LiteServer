@@ -41,24 +41,41 @@ function drawTermChart(stats) {
         is3D: true
     });
 }
-var powerArrData = [
-    ['Time', 'Power']
-];
-var powerCount = 0;
+// var powerArrData = [
+//     ['Time', 'Power']
+// ];
+// var powerCount = 0;
+//
+// function drawPowerChart(stats, powerConstants) {
+//     if (chartAPIinit == false) return;
+//     powerCount++;
+//     let power = 0;
+//     power += powerConstants[0] * stats['bri0'];
+//     power += powerConstants[1] * stats['bri1'];
+//     power += powerConstants[2] * stats['bri2'];
+//     power += powerConstants[3] * stats['bri3'];
+//     let foo = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
+//     for (let key in foo) power += powerConstants[1] * stats[foo[key]];
+//     powerArrData.push([powerCount, power]);
+//     var powerChart = new google.visualization.LineChart(document.getElementById('powerDataChart'));
+//     powerChart.draw(google.visualization.arrayToDataTable(powerArrData), {
+//         curveType: 'line',
+//         height: 400,
+//         width: 1200,
+//         legend: {
+//             position: 'bottom'
+//         }
+//     });
+// }
 
-function drawPowerChart(stats, powerConstants) {
+function drawPowerChart(arr) {
     if (chartAPIinit == false) return;
-    powerCount++;
-    let power = 0;
-    power += powerConstants[0] * stats['bri0'];
-    power += powerConstants[1] * stats['bri1'];
-    power += powerConstants[2] * stats['bri2'];
-    power += powerConstants[3] * stats['bri3'];
-    let foo = ['FAULTY', 'DISCONNECTED', 'UNKNOWN', 'CONNECTED_NOSTATUS'];
-    for (let key in foo) power += powerConstants[1] * stats[foo[key]];
-    powerArrData.push([powerCount, power]);
+    let arrData = [
+        ['Time', 'Power']
+    ];
+    for (let i in arr) arrData.push([i, arr[i]]);
     var powerChart = new google.visualization.LineChart(document.getElementById('powerDataChart'));
-    powerChart.draw(google.visualization.arrayToDataTable(powerArrData), {
+    powerChart.draw(google.visualization.arrayToDataTable(arrData), {
         curveType: 'line',
         height: 400,
         width: 1200,
@@ -174,12 +191,15 @@ process = function (data) {
         break;
     case 'stat':
         switch (data.data.type) {
+        case 'powerStatus':
+            drawPowerChart(data.data.data);
+            break;
         case 'pollStatus':
             drawPollChart(data.data.data);
             break;
         case 'lampStatus':
             drawLampChart(data.data.data);
-            drawPowerChart(data.data.data, data.data.powerConstants);
+            // drawPowerChart(data.data.data, data.data.powerConstants);
             break;
         case 'termStatus':
             drawTermChart(data.data.data);
@@ -205,7 +225,10 @@ setInterval(function () {
     wsoc.send(makeMsg('stat', {
         query: 'pollStatus'
     }));
-}, 3000);
+    wsoc.send(makeMsg('stat', {
+        query: 'powerStatus'
+    }));
+}, 1000);
 removeListenersBeforeClose = function () {
     wsoc.send(makeMsg('removeListener', {
         'loc': 'serverConfig'

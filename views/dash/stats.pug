@@ -3,7 +3,7 @@ html
     head
         title='Stats'+(isAuth ? ' | '+user.username : '')
         link(rel='stylesheet',href='/stylesheets/dash/stats.css')
-        meta(name='viewport', content='width=device-width, initial-scale=1')
+        meta(name="viewport",content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
         link(rel='stylesheet', href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css')
         script(src='/javascripts/jquery.js')
         script(src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js')
@@ -137,10 +137,8 @@ html
                             .panel-heading
                                 h4.panel-title
                                     a(data-toggle='collapse', data-parent='#accordion', href='#collapse4') Pollution
-                            #collapse4.panel-collapse.collapse
+                            #collapse4.panel-collapse.collapse.in
                                 .panel-body
-                                    | Lorem ipsum dolor sit amet, consectetur adipisicing elit,
-                                    | sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
-                                    | quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-
+                                    #map
+                                    script(async='', defer='', src='https://maps.googleapis.com/maps/api/js?key=AIzaSyCT2IciRf75Y52RKEFWuZKpMzF3Vg9Qr_k&callback=initMap')
         include leftNav

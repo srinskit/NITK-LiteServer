@@ -1,33 +1,53 @@
-div(id='nav')
-    div(id='navContainer')
-        h4(id='navTitle') Goto
-        ul(id='navUl')
-            li
-                a(class='navA' href='/') Home       
-            li
-                a(class='navA' href='/dash') Dash
-            li
-                a(class='navA'  href='/dash/map') Map
-            if user.admin  === true
-                li
-                    a(class='navA'  href='/dash/admin') Admin
-                li
-                    a(class='navA'  href='/dash/load') Load
-                li
-                    a(class='navA'  href='/upload') Advt
-                li 
-                    a(class='navA' href ='/dash/stats') Stats
-                li
-                    a(class='navA' href ='/dash/logs') Logs
-                li 
-                    a(class='navA' href ='/dash/report') Report
-            if user.admin === false
-                li
-                    a(class='navA onOverride' href='/dash/load' style='display:none;') Load 
-                li 
-                    a(class='navA' href ='/dash/report') Report
-            li 
-                a(class='navA'  href='/logout') Logout
-    button(id='navToggler')
-img(id="msgImg" src='/images/msg.png')  
-script(src='/javascripts/dash/leftNav.js')
+doctype html
+html
+    head
+        title Login
+        link(rel='stylesheet',href='/stylesheets/propraj.css')
+        link(rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css")
+        meta(name="viewport",content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
+    
+    body
+        script(src="/javascripts/my_js.js")
+        div(id="V", class="w3-row")
+            div(class="w3-sidebar w3-black w3-animate-left w3-col w3-animate-opacity", style="width:250px;",v-if="show")
+                div(class="w3-panel")
+                    span(class="w3-button w3-display-topright",@click="show=false") &times 
+                div(class="w3-container w3-bar-block w3-large")
+                    h4(class="w3-xxlarge w3-center") Goto
+                    ul(id='navUl')
+                        a(class="w3-bar-item w3-button" href='/' ) Home       
+                        a(class="w3-bar-item w3-button" href='/dash/map') Map
+                        a(class="w3-bar-item w3-button" href='/dash') Dash
+                        if user.admin  === true
+
+                            a(class="w3-bar-item w3-button" href='/dash/admin') Admin
+
+                            a(class="w3-bar-item w3-button" href='/dash/load') Load
+
+                            a(class="w3-bar-item w3-button" href='/upload') Advt
+             
+                            a(class="w3-bar-item w3-button" href ='/dash/stats') Stats
+
+                            a(class="w3-bar-item w3-button" href ='/dash/logs') Logs
+             
+                            a(class="w3-bar-item w3-button" href ='/dash/report') Report
+                        if user.admin === false
+
+                            a(class='onOverride' href='/dash/load' style='display:none;') Load 
+             
+                            a(class="w3-bar-item w3-button" href ='/dash/report') Report 
+                        a(class="w3-bar-item w3-button" href='/logout') Logout
+
+            div(class="w3-sidebar w3-black w3-col", style="width:25px;" v-if="!show" @click="show=true")
+                button(class="w3-button w3-hover-black",style="height:100%;padding-left:10px!important;padding-right-5px!important", @click="show=true") 
+                    i(class="fa fa-caret-right",aria-hidden="true")
+            
+                 
+        script.
+            new Vue({
+                el:'#V',
+                data:{
+                    show:false
+                }
+            })
+img(id="msgImg" src='/images/msg.png')

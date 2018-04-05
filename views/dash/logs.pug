@@ -9,36 +9,36 @@ html
         div(id='content')
             div(id='realContent')
                 form(method='GET' action='/dash/logs')
-                    table(id='control' style='margin: 0 auto;')
+                    table(id='control' class="w3-table-all w3-hoverable w3-centered" )
                         //- tr
                         //-     th
                         //-     th Date
                         //-     th Time
                         tr
-                            td
+                            td(style="max-width:20vw")
                                 label From:
-                            td
-                                input(type='date' name='fromDate' value=vars.fromDate)
-                            td
-                                input(type='time' name='fromTime' step=1 value=vars.fromTime) 
+                            td(style="max-width:30vw")
+                                input(class="w3-input w3-tiny" type='date' name='fromDate' value=vars.fromDate)
+                            td(style="max-width:30vw")
+                                input(class="w3-input w3-tiny" type='time' name='fromTime' step=1 value=vars.fromTime) 
                         tr
-                            td
+                            td(style="max-width:20vw")
                                 label Until:
-                            td
-                                input(type='date' name='untilDate' value= vars.untilDate)
-                            td
-                                input(type='time' name='untilTime' step=1 value=vars.untilTime) 
+                            td(style="max-width:30vw")
+                                input(class="w3-input w3-tiny" type='date' name='untilDate' value= vars.untilDate)
+                            td(style="max-width:30vw")
+                                input(class="w3-input w3-tiny" type='time' name='untilTime' step=1 value=vars.untilTime) 
                         tr
-                            td
+                            td(style="max-width:20vw")
                                 label Level:
-                            td
-                                select(name='level' style='width:100%;')
+                            td(style="max-width:30vw")
+                                select(class="w3-select" name='level' style='width:100%;')
                                     for level in ['all', 'info', 'warn', 'error']
                                         option(value= level selected= vars.level==level) #{level}
-                            td
-                                input(type='submit' value='Get Logs' style='width:100%;')
+                            td(style="max-width:30vw")
+                                input( class="w3-button w3-green" type='submit' value='Get Logs' style='width:100%;')
                 br
-                table(id='logs' style='margin: 0 auto;')
+                table(id='logs' class="w3-table-all w3-hoverable w3-centered" style="margin-bottom:40px")
                     tr
                         th Time
                         th Level

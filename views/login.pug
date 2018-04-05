@@ -59,9 +59,9 @@ html
                 input(type='password',placeholder='Password',id='pass',name='password'  autocomplete='off',style="width:60vw;max-width:300px")
                 br
                 button(type='submit',id='loginButton',style="width:60vw;max-width:300px") Login
-            div(class='errorMsg')
+            div(class='errorMsg w3-center',style="width:100vw")
                 if errorMsg.length > 0
-                    h4(class=" w3-red w3-large") !{errorMsg}
-            div(class='successMsg')
+                    h4(class=" w3-red w3-large w3-padding w3-center",style="width:60vw;max-width:300px;display:inline") !{errorMsg}
+            div(class='successMsg w3-center',style="width:100vw")
                 if successMsg.length > 0
-                    h4(class=" w3-red w3-large") !{successMsg}            
+                    h4(class=" w3-red w3-large w3-padding w3-center",style="width:60vw;max-width:300px;display:inline") !{successMsg}            

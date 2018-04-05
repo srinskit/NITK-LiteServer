@@ -8,12 +8,16 @@ html
         script(src='/javascripts/dash/load.js')
         div(id='content')
             div(id='realContent')
-                form(action='/dash/load/' method='POST')
-                    h3 Save a config
-                    input(type='text' name='configName' placeholder='Name for config')
-                    input(type='submit' name='submit' value='Save')
-                    h3 Load a config
-                    table
+                form(action='/dash/load/' method='POST' class="w3-center")
+                    h3(class="w3-center w3-xxlarge" style="margin-top:30px") 
+                        i Save a config
+                    input(type='text' name='configName' placeholder='Name for config' class="w3-input" style="margin-bottom:10px")
+                    input(type='submit' name='submit' value='Save' class="w3-button w3-green")
+                        
+                    h3(class="w3-center w3-xxlarge" style="margin-top:30px") 
+                        i Load a config
+                    
+                    table(class="w3-table-all w3-hoverable w3-centered")
                         tr
                             th Config
                             th Load
@@ -22,26 +26,32 @@ html
                             tr
                                 td=config.name
                                 td
-                                    input(class='radioUn' type='radio' name='configID' value=config.id)
+                                    input(class='radioUn w3-radio' type='radio' name='configID' value=config.id)
                                 td
-                                    input(type='checkbox' name='remove[]' value=config.id)                            
+                                    input(class="w3-check" type='checkbox' name='remove[]' value=config.id)                            
                         tr
                             td Action
                             td
-                                input(type='submit' name='submit' value='Load')
+                                input(class="w3-blue w3-btn" type='submit' name='submit' value='Load')
                             td
-                                input(type='submit' name='submit' value='Remove') 
-                    h3 Schedule a load
+                                input(class="w3-red w3-btn" type='submit' name='submit' value='Remove') 
+                                
+                    h3(class="w3-center w3-xxlarge" style="margin-top:30px")
+                        i Schedule a load
                     label Select a config name: 
-                    select(name='configToSchedule')
+                    select(name='configToSchedule' class="w3-select")
                         each config in configs
                             option(value=config.name)=config.name
                     br
-                    input(type='date' name='dateInput')
-                    input(type='time' name='timeInput')    
-                    input(type='submit' name='submit' value='Schedule') 
-                    h3 Scheduled loads
-                    table
+                        
+                    input( class="w3-input" style="margin-top:15px" type='date' name='dateInput')
+                    input( class="w3-input" style="margin-top:15px" type='time' name='timeInput')    
+                    input( class="w3-green w3-button w3-margin" type='submit' name='submit' value='Schedule') 
+                    
+                    h3(class="w3-center w3-xxlarge" style="margin-top:30px")
+                        i Scheduled loads
+                    table(class="w3-table-all w3-hoverable w3-centered" style="margin-bottom:40px")
+                        
                         tr
                             th Config
                             th Time
@@ -51,12 +61,12 @@ html
                                 td=schedule.name
                                 td=schedule.time
                                 td
-                                    input(type='checkbox' name='cancel[]' value=schedule.id)                            
+                                    input(class="w3-checkbox" type='checkbox' name='cancel[]' value=schedule.id)                            
                         tr
                             td
                             td
                             td
-                                input(type='submit' name='submit' value='Cancel') 
+                                input(class="w3-red w3-button" type='submit' name='submit' value='Cancel') 
 
         script.
             var navConVisible = false
